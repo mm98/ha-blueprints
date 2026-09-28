@@ -1,0 +1,493 @@
+blueprint:
+  name: Button Cycle Brightness (Up then Down)
+  description: |
+    Cycles the brightness of one or more lights on each button press — step up to 100%, step back down, off, repeat. Brightness snaps to multiples of the configured step. A separate off event (short release by default) turns the lights off at any time and doubles as an on-toggle when they're already off. Works with Hue / Matter / Zigbee2MQTT button entities that expose an `event_type` attribute.
+
+    Provide an `input_boolean` helper as the Direction Helper for two-way (up-then-down) cycling, or leave it empty for a one-way cycle that only steps up.
+
+    <details>
+    <summary><strong>🧾 Version History</strong></summary>
+
+    **v1.1.0**: Direction Helper is now optional. When unset, the cycle only steps up; at 100% the next press turns off, or wraps to step% with `Limit Extremes`.
+
+    **v1.0.0**: Initial release.
+
+    </details>
+
+  source_url: "https://github.com/mm98/ha-blueprints/blob/main/blueprints/automation/mm98/button_cycle_brightness.yaml"
+  domain: automation
+  author: mm98
+  homeassistant:
+    min_version: "2025.10.0"
+
+  input:
+    # Button trigger input
+    button_entity:
+      name: Button
+      description: >
+        The button entity that fires events. Must expose an `event_type` attribute
+        (e.g. Hue / Matter / Zigbee2MQTT `event.*` entities for wall switches, remotes,
+        and dimmer pucks). The automation subscribes to the `event_type` attribute
+        transitioning to one of the configured cycle or off values — entities without
+        this attribute will not trigger the automation.
+      selector:
+        entity:
+          domain:
+            - button
+            - event
+            - sensor
+            - binary_sensor
+            - input_button
+
+    # Target lights input
+    light_target:
+      name: Lights
+      description: One or more lights to cycle up and down.
+      selector:
+        target:
+          entity:
+            domain: light
+
+    # Reference light input
+    reference_light:
+      name: Reference Light
+      description: A single light whose current brightness is used to calculate the next step. Usually set to the same light (or one of the lights) selected as the target above.
+      selector:
+        entity:
+          domain: light
+
+    # Direction helper input
+    direction_helper:
+      name: Direction Helper
+      description: >
+        An `input_boolean` helper used to remember the current direction. ON = the next press
+        will increase brightness, OFF = the next press will decrease brightness. The automation
+        manages this for you. Leave empty to run a one-way cycle that only steps up — when the
+        cycle reaches 100% the next press turns the lights off (or jumps back to the step
+        percentage if `Limit Extremes` is enabled).
+      default:
+      selector:
+        entity:
+          domain: input_boolean
+
+    # Brightness cycle settings
+    cycle_section:
+      name: Brightness Cycle
+      icon: mdi:brightness-percent
+      collapsed: true
+      input:
+        step_percentage:
+          name: Step Percentage
+          description: How much to increase or decrease brightness on each button press.
+          default: 20
+          selector:
+            number:
+              min: 1
+              max: 100
+              step: 1
+              unit_of_measurement: "%"
+              mode: slider
+        transition_duration:
+          name: Transition
+          description: Time it takes for the brightness to fade to the new value.
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 10
+              step: 0.5
+              unit_of_measurement: seconds
+        color_temperature:
+          name: Color Temperature
+          description: The color temperature in Kelvin applied to the lights on each press.
+          default: 4000
+          selector:
+            color_temp:
+              min: 1500
+              max: 7000
+              unit: kelvin
+        limit_extremes:
+          name: Limit Extremes
+          description: >
+            When enabled, the cycle never sets brightness to 0% (off) or 100%. Pressing
+            at the last grid position before 100% flips direction and steps back (e.g.
+            with step 20% the cycle bounces between 20 / 40 / 60 / 80 and never reaches
+            100% or off). Use the Off Event Type (short release by default) to turn the
+            lights off when this is enabled.
+          default: false
+          selector:
+            boolean: {}
+        restore_on_initial_press:
+          name: Restore On Initial Press
+          description: >
+            When enabled, pressing the button while the lights are off turns them back
+            on at the bulb's last remembered brightness (via `light.turn_on` without a
+            `brightness_pct`) instead of starting the cycle at the step percentage.
+            Applies to both cycle and off events while the lights are off — subsequent
+            presses continue the normal cycle from wherever the bulb restores.
+          default: false
+          selector:
+            boolean: {}
+
+    # Button event filtering settings
+    event_section:
+      name: Button Events
+      icon: mdi:gesture-tap-button
+      collapsed: true
+      input:
+        cycle_event_types:
+          name: Cycle Event Types
+          description: >
+            One or more values of the `event_type` attribute that advance the brightness
+            cycle. For Hue / Matter / Zigbee2MQTT button entities `long_press` fires the
+            moment the long-press threshold is reached (~800 ms). You can add `repeat`
+            to enable hold-to-dim, but only if your `Off Event Type` is set to
+            `long_release` (or left empty) — pairing `repeat` with `long_press = off`
+            will fire off mid-hold and then restart the cycle from the trailing repeat
+            events.
+          default:
+            - long_press
+          selector:
+            select:
+              multiple: true
+              custom_value: true
+              options:
+                - initial_press
+                - repeat
+                - short_release
+                - long_press
+                - long_release
+        off_event_type:
+          name: Off Event Type
+          description: >
+            Value of the `event_type` attribute that turns the lights off and resets the cycle.
+            Default is `short_release` so the lights cut off on a quick tap. Use `long_release`
+            instead if you want off to fire on release of a long press (enables hold-to-dim
+            when combined with `repeat` in `Cycle Event Types`). Leave empty to disable the
+            off-press behavior.
+            Note: on Hue Wall Switch Modules the switch type must be set to "Push button" in
+            the Hue app for `long_press` / `long_release` / `repeat` events to fire — the
+            `rocker` and `toggle` modes only emit `initial_press` and `short_release`.
+          default: "short_release"
+          selector:
+            select:
+              custom_value: true
+              options:
+                - ""
+                - initial_press
+                - repeat
+                - short_release
+                - long_press
+                - long_release
+
+    # Debug handling settings
+    debug_section:
+      name: Debug
+      icon: mdi:content-save-settings-outline
+      collapsed: true
+      input:
+        log_to_activity:
+          name: Log to Activity
+          description: >
+            When enabled, each cycle/off press writes one compact line to the button
+            entity's logbook, e.g. `🔆 short_release | 60% → 40% (down)`. Unrelated
+            events (`initial_press`, `long_release`, etc.) never reach the log because
+            they don't trigger the automation.
+          default: false
+          selector:
+            boolean: {}
+
+mode: queued
+max: 10
+max_exceeded: silent
+# trace:
+#   stored_traces: 50
+
+variables:
+  direction_helper: !input direction_helper
+  reference_light: !input reference_light
+  step_percentage: !input step_percentage
+  color_temperature: !input color_temperature
+  restore_on_initial_press: !input restore_on_initial_press
+  limit_extremes: !input limit_extremes
+  cycle_event_types: !input cycle_event_types
+  off_event_type: !input off_event_type
+  log_to_activity: !input log_to_activity
+
+  # The event_type reported on the button entity's to_state (empty string if the entity has no such attribute).
+  # Kept as a single-line template + trim filter so the result is never padded with whitespace
+  # from YAML folding, which would break the `==` / `in` comparisons below.
+  triggered_event_type: "{{ (trigger.to_state.attributes.event_type if trigger is defined and trigger.to_state is not none and trigger.to_state.attributes is defined and trigger.to_state.attributes.event_type is defined else '') | string | trim }}"
+
+  # True when the current trigger is an "off" press (e.g. long_press).
+  is_off_press: >
+    {{ off_event_type != '' and triggered_event_type == off_event_type }}
+
+  # Current brightness in percent (0..100). 0 when the light is off or brightness attribute is missing.
+  current_pct: "{{ ((state_attr(reference_light, 'brightness') | float(0)) / 255 * 100) | round(0) if states(reference_light) == 'on' and state_attr(reference_light, 'brightness') is not none else 0 }}"
+
+  # True when a direction helper has been configured. When false the blueprint runs in
+  # one-way (always up) mode and skips all input_boolean.* service calls.
+  has_direction_helper: "{{ direction_helper not in (none, '', 'unknown', 'unavailable') }}"
+
+  # True when the direction helper says we are currently going up. Always true in
+  # one-way mode (no helper configured) so the cycle only ever steps upward.
+  going_up: "{{ (not has_direction_helper) or states(direction_helper) == 'on' }}"
+
+  # True when the reference light is currently off or in an unknown/unavailable state.
+  light_is_off: "{{ states(reference_light) != 'on' }}"
+
+  # Raw next brightness (not yet clamped), snapped to the step grid so the cycle
+  # can only land on multiples of step_percentage (0, step, 2·step, ..., 100).
+  # Going up: floor current to the grid, then add one step (e.g. 30% → 40% with step 20).
+  # Going down: ceil current to the grid, then subtract one step (e.g. 30% → 20% with step 20).
+  next_pct_raw: >
+    {% set step = [step_percentage | int(1), 1] | max %}
+    {% set cur = current_pct | int(0) %}
+    {% if light_is_off %}
+      {{ step }}
+    {% elif going_up %}
+      {{ (cur // step + 1) * step }}
+    {% else %}
+      {{ ((cur + step - 1) // step - 1) * step }}
+    {% endif %}
+
+  # Effective next brightness — reflects the branch that will actually fire, so the
+  # log reads "current → next" correctly. Accounts for off presses, the limit-extremes
+  # bounce branches, and the normal [0..100] clamp.
+  next_pct: >-
+    {%- set raw = next_pct_raw | int(0) -%}
+    {%- set cur = current_pct | int(0) -%}
+    {%- set step = step_percentage | int(1) -%}
+    {%- if is_off_press and (not light_is_off) -%}
+      0
+    {%- elif (not has_direction_helper) and (not light_is_off) and raw >= 100 and limit_extremes -%}
+      {{ step }}
+    {%- elif (not has_direction_helper) and (not light_is_off) and raw >= 100 -%}
+      0
+    {%- elif limit_extremes and (not light_is_off) and going_up and raw >= 100 -%}
+      {{ cur - step }}
+    {%- elif limit_extremes and (not light_is_off) and (not going_up) and raw <= 0 -%}
+      {{ cur + step }}
+    {%- else -%}
+      {{ [[raw, 0] | max, 100] | min }}
+    {%- endif -%}
+
+  # True when an up press would reach or exceed 100%.
+  hit_top: >
+    {{ (not light_is_off) and going_up and (next_pct_raw | int(0)) >= 100 }}
+
+  # True when a down press would drop to or past 0%.
+  hit_bottom: >
+    {{ (not light_is_off) and (not going_up) and (next_pct_raw | int(0)) <= 0 }}
+
+triggers:
+  # Fire only when the button entity's event_type attribute changes to one of the
+  # configured cycle values. Filtering at the trigger (rather than inside conditions)
+  # means events we don't care about — e.g. `initial_press`, `long_release`, `repeat`
+  # when not in the cycle list — don't start an automation run at all.
+  - platform: state
+    entity_id: !input button_entity
+    attribute: event_type
+    to: !input cycle_event_types
+    id: cycle_press
+
+  # Fire only when the event_type attribute changes to the configured off value.
+  - platform: state
+    entity_id: !input button_entity
+    attribute: event_type
+    to: !input off_event_type
+    id: off_press
+
+actions:
+  # Overlap guard: if the user configures the same event_type in both `cycle_event_types`
+  # and `off_event_type`, both the `cycle_press` and `off_press` triggers will fire on
+  # the same event, queuing two runs. Let the `off_press` run handle it and stop the
+  # `cycle_press` run early, otherwise Case 0 turns the lights off and the default
+  # branch of the follow-up run turns them right back on.
+  - alias: "Skip cycle run when event also matches off_event_type"
+    if:
+      - condition: template
+        value_template: "{{ trigger.id == 'cycle_press' and is_off_press }}"
+    then:
+      - stop: "Event matches both cycle and off; letting the off_press run handle it."
+
+  # Log a debug entry if enabled — one line per actionable press. The triggers above
+  # only fire for configured cycle / off events, so `initial_press`, `long_release`,
+  # and other unrelated state changes never reach this log.
+  - alias: "If activity logging is enabled"
+    if:
+      - condition: template
+        value_template: "{{ log_to_activity | bool(false) }}"
+    then:
+      - service: logbook.log
+        data:
+          name: Button Cycle Brightness
+          entity_id: !input button_entity
+          message: >-
+            {%- set is_restore = light_is_off and restore_on_initial_press -%}
+            {%- set dir_suffix = ' (up)' if (next_pct | int(0)) > (current_pct | int(0)) else (' (down)' if (next_pct | int(0)) < (current_pct | int(0)) else '') -%}
+            🔆 {{ triggered_event_type }} | {{ current_pct }}% → {% if is_restore %}restore previous{% else %}{{ next_pct }}%{{ dir_suffix }}{% endif %}
+
+  # Decide what to do for this press
+  - choose:
+      # Case 0: Off press (e.g. long_press) AND lights are currently on — turn off
+      # and reset direction to "up" for the next cycle. When lights are off and the
+      # off event arrives, this branch is skipped so Case 1a/1b can turn the lights
+      # on instead (making the off event effectively a toggle).
+      - alias: "If off event and lights are on, turn off and reset direction"
+        conditions:
+          - condition: template
+            value_template: "{{ is_off_press and not light_is_off }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ has_direction_helper }}"
+            then:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: !input direction_helper
+          - service: light.turn_off
+            data:
+              transition: !input transition_duration
+            target: !input light_target
+
+      # Case 1a: Lights are off and "Restore On Initial Press" is enabled — turn on without setting brightness, so the bulb returns to its last value. Direction is set to "up" so the next press continues the cycle from wherever the bulb restores.
+      - alias: "If lights are off and restore is enabled, turn on at previous brightness"
+        conditions:
+          - condition: template
+            value_template: "{{ light_is_off and restore_on_initial_press }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ has_direction_helper }}"
+            then:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: !input direction_helper
+          - service: light.turn_on
+            data:
+              transition: !input transition_duration
+            target: !input light_target
+
+      # Case 1b: Lights are off and restore is disabled — turn on at the step percentage and set direction to "up"
+      - alias: "If lights are off, start cycle at step %"
+        conditions:
+          - condition: template
+            value_template: "{{ light_is_off }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ has_direction_helper }}"
+            then:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: !input direction_helper
+          - service: light.turn_on
+            data:
+              brightness_pct: "{{ step_percentage }}"
+              color_temp_kelvin: "{{ color_temperature }}"
+              transition: !input transition_duration
+            target: !input light_target
+
+      # Case 2-limit: Descending and about to drop to 0% while `Limit Extremes` is on —
+      # bounce back up by one step and flip direction to "up" instead of turning off.
+      # Only applies to cycle events; the off event still turns the lights off via Case 0.
+      - alias: "If descending past step% and limit is enabled, bounce up instead of off"
+        conditions:
+          - condition: template
+            value_template: "{{ hit_bottom and limit_extremes }}"
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: !input direction_helper
+          - service: light.turn_on
+            data:
+              brightness_pct: "{{ next_pct }}"
+              color_temp_kelvin: "{{ color_temperature }}"
+              transition: !input transition_duration
+            target: !input light_target
+
+      # Case 2: Descending press reached 0% — turn the lights off and flip direction back to "up"
+      - alias: "If descending to 0%, turn off and flip direction to up"
+        conditions:
+          - condition: template
+            value_template: "{{ hit_bottom }}"
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: !input direction_helper
+          - service: light.turn_off
+            data:
+              transition: !input transition_duration
+            target: !input light_target
+
+      # Case 3-oneway-limit: One-way mode (no direction helper) hit the top while
+      # `Limit Extremes` is on — wrap back to the step percentage instead of bouncing
+      # or clamping. No helper to update.
+      - alias: "If one-way and ascending past (100 - step)% with limit enabled, wrap to step%"
+        conditions:
+          - condition: template
+            value_template: "{{ hit_top and not has_direction_helper and limit_extremes }}"
+        sequence:
+          - service: light.turn_on
+            data:
+              brightness_pct: "{{ next_pct }}"
+              color_temp_kelvin: "{{ color_temperature }}"
+              transition: !input transition_duration
+            target: !input light_target
+
+      # Case 3-oneway: One-way mode hit the top — turn the lights off so the next
+      # press restarts the cycle from step% (or restores, if enabled).
+      - alias: "If one-way and ascending to 100%, turn off"
+        conditions:
+          - condition: template
+            value_template: "{{ hit_top and not has_direction_helper }}"
+        sequence:
+          - service: light.turn_off
+            data:
+              transition: !input transition_duration
+            target: !input light_target
+
+      # Case 3-limit: Ascending and about to reach 100% while `Limit Extremes` is on —
+      # bounce back down by one step and flip direction to "down" instead of clamping to 100%.
+      - alias: "If ascending past (100 - step)% and limit is enabled, bounce down instead of clamping"
+        conditions:
+          - condition: template
+            value_template: "{{ hit_top and limit_extremes }}"
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input direction_helper
+          - service: light.turn_on
+            data:
+              brightness_pct: "{{ next_pct }}"
+              color_temp_kelvin: "{{ color_temperature }}"
+              transition: !input transition_duration
+            target: !input light_target
+
+      # Case 3: Ascending press reached or exceeded 100% — clamp to 100% and flip direction to "down"
+      - alias: "If ascending to 100%, clamp and flip direction to down"
+        conditions:
+          - condition: template
+            value_template: "{{ hit_top }}"
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input direction_helper
+          - service: light.turn_on
+            data:
+              brightness_pct: "{{ next_pct }}"
+              color_temp_kelvin: "{{ color_temperature }}"
+              transition: !input transition_duration
+            target: !input light_target
+
+    # Default: normal step up or step down, keep current direction unchanged
+    default:
+      - alias: "Apply next brightness step"
+        service: light.turn_on
+        data:
+          brightness_pct: "{{ next_pct }}"
+          color_temp_kelvin: "{{ color_temperature }}"
+          transition: !input transition_duration
+        target: !input light_target
