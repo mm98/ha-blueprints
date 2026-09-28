@@ -6,7 +6,9 @@ Automation blueprints for [Home Assistant](https://www.home-assistant.io/). Impo
 |---|---|
 | [Appliance cycle counter](#appliance-cycle-counter) | Counts the runs of a washing machine, dishwasher, dryer or vacuum and reminds you on your phone when it needs maintenance. |
 | [Button cycle brightness](#button-cycle-brightness) | Steps the brightness of one or more lights up and down with a single button. |
+| [Car mileage notification](#car-mileage-notification) | Warns you on your phone before your car passes the yearly km limit of its insurance or lease. |
 | [Motion-triggered adaptive light](#motion-triggered-adaptive-light) | Turns a light on with motion when the room is dark, with a dimmer and warmer night mode. |
+| [Temperature-controlled switch](#temperature-controlled-switch) | Turns a heater, fan or other switch on and off to keep a temperature between two limits. |
 
 All blueprints need Home Assistant 2025.10 or newer.
 
@@ -107,7 +109,7 @@ It works with buttons that report their presses as an event entity with an `even
 
 The blueprint needs to remember whether the next press goes up or down. It keeps this in a toggle helper you create once: go to **Settings > Devices & services > Helpers**, select **Create helper** and pick **Toggle**, for example "Living room dimmer direction". Select it as the direction helper, and the blueprint switches it for you. Use one helper per automation.
 
-Without a direction helper, the cycle only goes up. After the last step below full brightness, the next press turns the lights off, and the press after that starts again at the step percentage. With a step of 20% that is: 20%, 40%, 60%, 80%, off, 20% and so on.
+Without a direction helper, the cycle only goes up: after full brightness, the next press turns the lights off, and the press after that starts again at the step percentage. With a step of 20% that is: 20%, 40%, 60%, 80%, 100%, off, 20% and so on.
 
 ### Limit extremes
 
@@ -150,6 +152,55 @@ On a Hue wall switch module, set the switch type to **Push button** in the Hue a
 | Setting | Default | What it does |
 |---|---|---|
 | Log to activity | off | Writes one line per press to the button's logbook, with the press type, the old and the new brightness and the direction. |
+
+## Car mileage notification
+
+[![Import the Car mileage notification blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fcar_mileage_notification.yaml)
+
+Many car insurance and lease contracts allow a fixed number of km per year, for example 15000. This blueprint follows how far the car has been driven this year and sends a notification to your phone when you get close to the limit, and again every few hundred km after that.
+
+### What you need
+
+A sensor with the km driven in the current insurance year, which starts again at 0 each year. The easiest is a utility meter helper on the car's odometer:
+
+1. Go to **Settings > Devices & services > Helpers**, select **Create helper** and pick **Utility meter**.
+2. Select the car's odometer sensor as the input sensor. It usually comes from the car's integration, for example for BMW, Hyundai or Tesla.
+3. Set the reset cycle to yearly. If your insurance year does not start on 1 January, move the yearly reset to its start date with the helper's reset offset.
+
+Select this utility meter as the yearly km sensor. No other helpers are needed.
+
+### How it works
+
+- Each time the km sensor changes, the blueprint checks whether a new milestone was passed. The first milestone is the warning threshold, and after that there is one every notification interval.
+- For each new milestone you get one notification. It says how many km you have driven, which milestone you passed and how many km are left before the limit, or that you have passed the limit.
+- When the sensor starts again at 0 for a new year, no notification is sent.
+- Many cars update their odometer every few minutes while driving. The minimum time between checks skips updates that come sooner than that after the last check. An update that passes a milestone is never skipped, so no notification is lost.
+
+### Example
+
+With a yearly limit of 15000 km, a warning threshold of 10000 km and an interval of 500 km, you get a notification at 10000 km, 10500 km, 11000 km and so on. From 15000 km on, the notification says you have passed the limit.
+
+### Settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| Yearly km sensor | | The utility meter, or another sensor or number helper, with the km driven this insurance year. Required. |
+| Notification device | | The phone or tablet with the Home Assistant Companion app that gets the notifications. Required. |
+
+**Limits and thresholds**
+
+| Setting | Default | What it does |
+|---|---|---|
+| Yearly km limit | 15000 km | The km allowed per insurance year, from 1000 to 200000. The notification shows how far you are from it. |
+| Warning threshold | 10000 km | The km driven at which the first notification is sent. |
+| Notification interval | 500 km | How many km more between two notifications, from 50 to 5000. |
+| Minimum time between checks | 60 minutes | Skip sensor updates that come sooner than this after the last check, up to 1440 minutes. 0 checks every update. |
+
+**Debug**
+
+| Setting | Default | What it does |
+|---|---|---|
+| Log to activity | off | Writes each checked update to the logbook, with the km driven, the km before and whether a notification was sent. |
 
 ## Motion-triggered adaptive light
 
@@ -232,6 +283,68 @@ Blocking only stops the light from turning on. A light that is already on still 
 | Setting | Default | What it does |
 |---|---|---|
 | Log to activity | off | Writes a line to the logbook each time the automation acts, with the mode, brightness, color temperature, the light level and the threshold. |
+
+## Temperature-controlled switch
+
+[![Import the Temperature-controlled switch blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Ftemperature_switch_control.yaml)
+
+Turns a switch on and off to keep a temperature between two limits: a heater that runs when a room gets cold, or a fan that runs when it gets warm. It works with switches, lights, fans and toggle helpers, and other devices can follow along.
+
+### How it works
+
+- Every few minutes, every 5 by default, the blueprint reads the temperature sensor and compares it with the low and the high temperature.
+- **Heating:** the switch turns on at or below the low temperature, and off at or above the high temperature.
+- **Cooling:** the switch turns on at or above the high temperature, and off at or below the low temperature.
+- Between the two temperatures nothing changes, so the switch does not flip on and off around a single value.
+- A command is only sent when the switch is not already on or off as it should be. The additional targets turn on and off together with the switch.
+- The check interval also works as a pause between switching. For compressors and similar equipment, pick a longer interval so they do not start and stop too often.
+- While the temperature sensor is unavailable, nothing happens.
+
+### Blocking
+
+Two optional blocking entities pause the automation. While it is paused, the switch stays as it is:
+
+- **Blocking entity (on / true):** paused while this entity is on, for example an "Away mode" toggle helper.
+- **Blocking entity (off / false):** paused while this entity is off, for example a "Heating enabled" toggle helper.
+
+### Example
+
+A heater on a smart plug in a hobby room: the room's temperature sensor, the smart plug as the controlled switch, heating mode, low temperature 19° and high temperature 22°. The heater turns on at 19° or colder and off again at 22° or warmer.
+
+### Settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| Temperature sensor | | The sensor with the temperature to control. Required. |
+| Controlled switch | | The switch, light, fan or toggle helper that turns on and off. Required. |
+| Additional targets | none | Other entities, devices or areas that turn on and off with the switch. |
+
+**Thresholds**
+
+| Setting | Default | What it does |
+|---|---|---|
+| Mode | Heating | **Heating** turns the switch on when it is cold, **Cooling** when it is hot. |
+| Low temperature | 19° | The lower limit, from -50 to 100 in steps of 0.5. |
+| High temperature | 22° | The upper limit, from -50 to 100 in steps of 0.5. |
+
+**Blocking**
+
+| Setting | Default | What it does |
+|---|---|---|
+| Blocking entity (on / true) | empty | Nothing happens while this entity is on. |
+| Blocking entity (off / false) | empty | Nothing happens while this entity is off. |
+
+**Check interval**
+
+| Setting | Default | What it does |
+|---|---|---|
+| Check interval | Every 5 minutes | How often the temperature is checked: every 1, 5, 10, 15 or 30 minutes, or every hour. |
+
+**Debug**
+
+| Setting | Default | What it does |
+|---|---|---|
+| Log to activity | off | Writes a line to the logbook at every check, with the mode, the temperature, the two limits and what was done. |
 
 ## License
 

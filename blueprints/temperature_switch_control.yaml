@@ -1,0 +1,273 @@
+blueprint:
+  name: Temperature-Controlled Switch
+  description: |
+    Controls a switch (or any on/off entity) based on the reading of a temperature sensor. Turns the target ON when temperature reaches a low threshold and OFF when it reaches a high threshold. Supports both heating mode (on when cold, off when hot) and cooling mode (on when hot, off when cold). Includes optional blocking entities and additional targets.
+
+    <details>
+    <summary><strong>🧾 Version History</strong></summary>
+
+    **v1.0.0**: Initial Release
+    - Periodically evaluates a temperature sensor (default every 5 minutes) and turns a switch on or off based on configurable low and high thresholds.
+    - Supports heating mode (on when cold, off when hot) and cooling mode (on when hot, off when cold).
+    - The check interval doubles as a natural cooldown, protecting compressors and similar equipment from short-cycling.
+    - Commands are only sent when the switch is not already in the desired state, preventing redundant on/off events.
+    - Optional additional targets (entities, devices, or areas) are toggled alongside the main switch.
+    - Optional blocking entities can pause the automation when an override is active.
+
+    </details>
+
+  source_url: https://github.com/mm98/ha-blueprints/blob/main/blueprints/temperature_switch_control.yaml
+  domain: automation
+  author: mm98
+  homeassistant:
+    min_version: "2025.10.0"
+
+  input:
+    # Temperature sensor input
+    temperature_entity:
+      name: Temperature Sensor
+      description: The sensor that reports the current temperature used to drive the switch.
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+
+    # Target switch input
+    switch_entity:
+      name: Controlled Switch
+      description: The switch (or compatible on/off entity) that will be turned on or off based on the temperature.
+      selector:
+        entity:
+          domain:
+            - switch
+            - light
+            - input_boolean
+            - fan
+
+    # Additional targets input
+    additional_targets:
+      name: Additional Targets
+      description: Optional additional entities, devices, or areas to turn on/off alongside the switch.
+      default: {}
+      selector:
+        target: {}
+
+    # Threshold settings
+    threshold_section:
+      name: Thresholds
+      icon: mdi:thermometer-lines
+      collapsed: true
+      input:
+        mode:
+          name: Mode
+          description: >
+            Heating: turn ON at or below the low threshold, OFF at or above the high threshold.
+            Cooling: turn ON at or above the high threshold, OFF at or below the low threshold.
+          default: heating
+          selector:
+            select:
+              options:
+                - label: Heating (on when cold)
+                  value: heating
+                - label: Cooling (on when hot)
+                  value: cooling
+        low_temperature:
+          name: Low Temperature
+          description: The lower temperature threshold. In heating mode the switch turns on when the temperature is at or below this value; in cooling mode it turns off when the temperature is at or below this value.
+          default: 19
+          selector:
+            number:
+              min: -50
+              max: 100
+              step: 0.5
+              unit_of_measurement: "°"
+              mode: box
+        high_temperature:
+          name: High Temperature
+          description: The upper temperature threshold. In heating mode the switch turns off when the temperature is at or above this value; in cooling mode it turns on when the temperature is at or above this value.
+          default: 22
+          selector:
+            number:
+              min: -50
+              max: 100
+              step: 0.5
+              unit_of_measurement: "°"
+              mode: box
+
+    # Optional blocking entity to disable automation temporarily
+    blocking_section:
+      name: Blocking
+      icon: mdi:cancel
+      collapsed: true
+      input:
+        blocking_entity_on:
+          name: Blocking Entity (on / true)
+          description: Skip automation if this entity is on or true, e.g., Away mode or manual override.
+          default: null
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
+                - switch
+        blocking_entity_off:
+          name: Blocking Entity (off / false)
+          description: Skip automation if this entity is off or false, e.g., Home mode or manual override.
+          default: null
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
+                - switch
+
+    # Periodic evaluation settings
+    periodic_section:
+      name: Check Interval
+      icon: mdi:timer-sync-outline
+      collapsed: true
+      input:
+        periodic_interval:
+          name: Check Interval
+          description: How often the automation re-evaluates the current temperature against the thresholds. Shorter intervals react faster to temperature changes; longer intervals reduce switching frequency and act as a natural cooldown for compressors and similar equipment.
+          default: "/5"
+          selector:
+            select:
+              options:
+                - label: Every 1 minute
+                  value: "/1"
+                - label: Every 5 minutes
+                  value: "/5"
+                - label: Every 10 minutes
+                  value: "/10"
+                - label: Every 15 minutes
+                  value: "/15"
+                - label: Every 30 minutes
+                  value: "/30"
+                - label: Every hour
+                  value: "0"
+
+    # Debug handling settings
+    debug_section:
+      name: Debug
+      icon: mdi:content-save-settings-outline
+      collapsed: true
+      input:
+        log_to_activity:
+          name: Log to Activity
+          description: Logs an activity entry whenever the switch is turned on or off; includes mode, current temperature and thresholds.
+          default: false
+          selector:
+            boolean: {}
+
+mode: restart
+max_exceeded: silent
+# trace:
+#   stored_traces: 50
+
+variables:
+  temperature_entity: !input temperature_entity
+  switch_entity: !input switch_entity
+  additional_targets: !input additional_targets
+  mode: !input mode
+  low_temperature: !input low_temperature
+  high_temperature: !input high_temperature
+  blocking_entity_on: !input blocking_entity_on
+  blocking_entity_off: !input blocking_entity_off
+  log_to_activity: !input log_to_activity
+
+  current_temperature: >
+    {{ states(temperature_entity) | float(0) }}
+  low_reached: >
+    {{ current_temperature <= low_temperature | float }}
+  high_reached: >
+    {{ current_temperature >= high_temperature | float }}
+  switch_is_on: >
+    {{ states(switch_entity) == 'on' }}
+  should_turn_on: >
+    {{ ((mode == 'heating' and low_reached == true) or
+        (mode == 'cooling' and high_reached == true))
+       and switch_is_on == false }}
+  should_turn_off: >
+    {{ ((mode == 'heating' and high_reached == true) or
+        (mode == 'cooling' and low_reached == true))
+       and switch_is_on == true }}
+  blocking_entity_on_allowed: >
+    {{ blocking_entity_on is none or states(blocking_entity_on) not in ["on", "true"] }}
+  blocking_entity_off_allowed: >
+    {{ blocking_entity_off is none or states(blocking_entity_off) not in ["off", "false"] }}
+
+triggers:
+  # Periodic evaluation trigger (every N minutes)
+  - platform: time_pattern
+    minutes: !input periodic_interval
+    id: periodic
+
+conditions:
+  - alias: "If Blocking entities are satisfied"
+    condition: template
+    value_template: >
+      {{ blocking_entity_on_allowed == true and blocking_entity_off_allowed == true }}
+  - alias: "If sensor reports a valid number"
+    condition: template
+    value_template: >
+      {{ states(temperature_entity) not in ["unknown", "unavailable", "none"] }}
+
+actions:
+  # Log a debug entry if logging is enabled
+  - alias: "If activity logging is enabled"
+    if:
+      - condition: template
+        value_template: >
+          {{ log_to_activity == true }}
+    then:
+      - action: logbook.log
+        data:
+          name: Temperature-Controlled Switch
+          message: >
+            🌡️ mode: {{ mode }}, current: {{ current_temperature }}°, low: {{ low_temperature }}°, high: {{ high_temperature }}°, action: {{ "turn_on" if should_turn_on == true else ("turn_off" if should_turn_off == true else "none") }}
+          entity_id: !input temperature_entity
+
+  # Decide whether to turn the switch on or off based on the current temperature
+  - choose:
+      # Turn ON branch
+      - alias: "If switch should be turned on"
+        conditions:
+          - condition: template
+            value_template: >
+              {{ should_turn_on == true }}
+        sequence:
+          - service: homeassistant.turn_on
+            target:
+              entity_id: !input switch_entity
+
+          # Turn on additional targets if defined
+          - alias: "Turn on additional targets"
+            if:
+              - condition: template
+                value_template: >
+                  {{ additional_targets | length > 0 }}
+            then:
+              - service: homeassistant.turn_on
+                target: !input additional_targets
+
+      # Turn OFF branch
+      - alias: "If switch should be turned off"
+        conditions:
+          - condition: template
+            value_template: >
+              {{ should_turn_off == true }}
+        sequence:
+          - service: homeassistant.turn_off
+            target:
+              entity_id: !input switch_entity
+
+          # Turn off additional targets if defined
+          - alias: "Turn off additional targets"
+            if:
+              - condition: template
+                value_template: >
+                  {{ additional_targets | length > 0 }}
+            then:
+              - service: homeassistant.turn_off
+                target: !input additional_targets

@@ -1,0 +1,235 @@
+blueprint:
+  name: Car Mileage Notification
+  description: |
+    Monitors a yearly utility meter (or any resetting km sensor) and sends a phone notification at a configurable interval once a warning threshold is reached. Designed for insurance or leasing policies with a yearly kilometre limit (e.g. 15 000 km/year).
+
+    The automation detects milestone crossings by comparing the sensor's previous and current value on every update, so no helper entities are required.
+
+    **Recommended setup with a Utility Meter helper:**
+
+    Go to **Settings > Devices & Services > Helpers > Create Helper > Utility Meter** and configure it as follows:
+    - **Input sensor**: your car's odometer sensor (e.g. from the BMW, Hyundai, Tesla or similar integration)
+    - **Reset cycle**: Yearly
+    - **Calendar cycle**: enable and set the month and day your insurance year starts (e.g. June 1)
+
+    The utility meter will automatically track how many km have been driven since the last reset and reset itself each year on the configured date. Select this utility meter as the *Yearly Km Sensor* input below.
+
+    <details>
+    <summary><strong>🧾 Version History</strong></summary>
+
+    **v1.1.0**: Check Throttling
+    - New *Minimum Time Between Checks* option: sensor updates arriving sooner than this after the previous check are skipped entirely (no trace, no activity log).
+    - Updates that cross a milestone always bypass the throttle, so no notification can be lost.
+
+    **v1.0.0**: Initial Release
+    - Sends a mobile notification every N km once the warning threshold is reached.
+    - Detects milestone crossings from the trigger's previous/current sensor state, so no extra helper is required.
+    - Optional activity log for debugging.
+
+    </details>
+
+  source_url: https://github.com/mm98/ha-blueprints/blob/main/blueprints/car_mileage_notification.yaml
+  domain: automation
+  author: mm98
+  homeassistant:
+    min_version: "2025.10.0"
+
+  input:
+    # Yearly km sensor (utility meter or similar)
+    driven_km_entity:
+      name: Yearly Km Sensor
+      description: >
+        A utility meter (or any sensor) that reports the total km driven in the current
+        insurance year and resets automatically each year.
+      selector:
+        entity:
+          domain:
+            - sensor
+            - input_number
+
+    # Mobile device for push notifications
+    notify_device:
+      name: Notification Device
+      description: The mobile device (Home Assistant Companion app) that will receive the notifications.
+      selector:
+        device:
+          integration: mobile_app
+
+    # Limit and threshold settings
+    limits_section:
+      name: Limits & Thresholds
+      icon: mdi:road-variant
+      collapsed: true
+      input:
+        yearly_limit:
+          name: Yearly Km Limit
+          description: The total km allowed per insurance year (e.g. 15 000). Used in notification messages to show how far you are from the cap.
+          default: 15000
+          selector:
+            number:
+              min: 1000
+              max: 200000
+              step: 500
+              unit_of_measurement: km
+              mode: box
+
+        warning_threshold:
+          name: Warning Threshold
+          description: Notifications begin when the driven km for the period reaches this value.
+          default: 10000
+          selector:
+            number:
+              min: 0
+              max: 200000
+              step: 500
+              unit_of_measurement: km
+              mode: box
+
+        notification_interval:
+          name: Notification Interval
+          description: How many additional km must be driven between each notification once the warning threshold is reached.
+          default: 500
+          selector:
+            number:
+              min: 50
+              max: 5000
+              step: 50
+              unit_of_measurement: km
+              mode: box
+
+        min_check_interval:
+          name: Minimum Time Between Checks
+          description: >
+            Skip sensor updates that arrive sooner than this after the previous check. Useful when the
+            odometer updates every few minutes while driving. Updates that cross a milestone are always
+            processed regardless of this setting, so no notification is lost. Set to 0 to check every update.
+          default: 60
+          selector:
+            number:
+              min: 0
+              max: 1440
+              step: 5
+              unit_of_measurement: min
+              mode: box
+
+    # Debug handling settings
+    debug_section:
+      name: Debug
+      icon: mdi:content-save-settings-outline
+      collapsed: true
+      input:
+        log_to_activity:
+          name: Log to Activity
+          description: Logs an activity entry on every sensor update; includes driven km, previous km, and whether a notification was sent.
+          default: false
+          selector:
+            boolean: {}
+
+mode: queued
+max: 5
+max_exceeded: silent
+# trace:
+#   stored_traces: 50
+
+variables:
+  driven_km_entity: !input driven_km_entity
+  yearly_limit: !input yearly_limit
+  warning_threshold: !input warning_threshold
+  notification_interval: !input notification_interval
+  min_check_interval: !input min_check_interval
+  log_to_activity: !input log_to_activity
+
+  # Seconds since the automation last ran its actions. -1 means "never" (first run
+  # after a restart or reload). Snapshotted here, before the actions update last_triggered.
+  seconds_since_last_check: >
+    {% set last = this.attributes.get('last_triggered') %}
+    {{ -1 if last is none else (now() - last).total_seconds() | round(0) | int }}
+  check_interval_passed: >
+    {{ seconds_since_last_check | int(-1) < 0
+       or seconds_since_last_check | int(0) >= min_check_interval * 60 }}
+
+  driven_km: >
+    {{ trigger.to_state.state | float(0) }}
+  prev_driven_km: >
+    {{ trigger.from_state.state | float(0) }}
+  km_remaining: >
+    {{ [yearly_limit - driven_km, 0] | max | round(0) | int }}
+
+  # Index of the highest milestone at or below the current and previous driven km.
+  # A milestone exists at: warning_threshold, warning_threshold + interval, warning_threshold + 2*interval and so on.
+  # Index -1 means below the warning threshold.
+  current_milestone_index: >
+    {% if driven_km >= warning_threshold %}
+      {{ ((driven_km - warning_threshold) // notification_interval) | int }}
+    {% else %}
+      {{ -1 }}
+    {% endif %}
+  prev_milestone_index: >
+    {% if prev_driven_km >= warning_threshold %}
+      {{ ((prev_driven_km - warning_threshold) // notification_interval) | int }}
+    {% else %}
+      {{ -1 }}
+    {% endif %}
+
+  # True when at least one new milestone boundary was crossed in this update.
+  should_notify: >
+    {{ current_milestone_index | int(-1) > prev_milestone_index | int(-1) }}
+
+  crossed_milestone_km: >
+    {{ warning_threshold + current_milestone_index | int(0) * notification_interval }}
+
+triggers:
+  - platform: state
+    entity_id: !input driven_km_entity
+    id: km_updated
+
+conditions:
+  - alias: "Both states report valid numbers"
+    condition: template
+    value_template: >
+      {{ trigger.from_state.state not in ["unknown", "unavailable", "none", None]
+         and trigger.to_state.state not in ["unknown", "unavailable", "none", None] }}
+  - alias: "Value increased (ignore yearly reset)"
+    condition: template
+    value_template: >
+      {{ driven_km > prev_driven_km }}
+  - alias: "Minimum time since last check has passed (milestones always pass)"
+    condition: template
+    value_template: >
+      {{ check_interval_passed or should_notify }}
+
+actions:
+  - alias: "If activity logging is enabled"
+    if:
+      - condition: template
+        value_template: >
+          {{ log_to_activity == true }}
+    then:
+      - action: logbook.log
+        data:
+          name: Car Mileage Notification
+          message: >
+            🚗 driven: {{ driven_km | round(1) }} km (was {{ prev_driven_km | round(1) }} km),
+            milestone index: {{ current_milestone_index }} (was {{ prev_milestone_index }}),
+            since last check: {{ seconds_since_last_check }} s,
+            should_notify: {{ should_notify }}
+          entity_id: !input driven_km_entity
+
+  - alias: "If a new milestone was crossed"
+    if:
+      - condition: template
+        value_template: >
+          {{ should_notify == true }}
+    then:
+      - domain: mobile_app
+        type: notify
+        device_id: !input notify_device
+        title: "🚗 Car Mileage Alert"
+        message: >
+          You have driven {{ driven_km | round(0) | int }} km this insurance period
+          (milestone: {{ crossed_milestone_km | int }} km).
+          {% if driven_km >= yearly_limit %}
+          ⚠️ You have exceeded the {{ yearly_limit | int }} km limit!
+          {% else %}
+          {{ km_remaining }} km remaining before the {{ yearly_limit | int }} km limit.
+          {% endif %}

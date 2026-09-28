@@ -14,7 +14,7 @@ blueprint:
     **v1.1.5**: Inline Comments and Improved Documentation
     - Added detailed inline comments for conditions and actions for improved readability and maintainability.
     - Updated blueprint description and structure for clarity when "Take control" is selected in Home Assistant.
-    - No functional logic changes — purely documentation and usability improvements.
+    - No functional logic changes, only documentation and usability improvements.
 
     **v1.1.4**: Motion Condition
     - Added a motion condition that turns the light off when ambient is above the threshold and light is already on.
