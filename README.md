@@ -18,7 +18,7 @@ Select the **Import blueprint** button of a blueprint below, then create an auto
 
 ## Appliance cycle counter
 
-[![Import the Appliance cycle counter blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fappliance_cycle_counter.yaml)
+[![Import the Appliance cycle counter blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fappliance_cycle_counter_notification.yaml)
 
 Counts finished cycles of an appliance and sends a notification to your phone when a limit is reached, for example to clean the washing machine every 30 washes.
 
@@ -47,7 +47,7 @@ Warns you on your phone when your car gets close to the yearly km limit of its i
 
 ## Motion-triggered adaptive light
 
-[![Import the Motion-triggered adaptive light blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fmotion_ambient_nightmode_lights.yaml)
+[![Import the Motion-triggered adaptive light blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fmotion_triggered_adaptive_light.yaml)
 
 Turns a light on with motion when the room is dark enough, and off again when the motion stops.
 
@@ -58,7 +58,7 @@ Turns a light on with motion when the room is dark enough, and off again when th
 
 ## Temperature-controlled switch
 
-[![Import the Temperature-controlled switch blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Ftemperature_switch_control.yaml)
+[![Import the Temperature-controlled switch blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Ftemperature_controlled_switch.yaml)
 
 Turns a heater, fan or other switch on and off to keep a temperature between a low and a high limit. Heating mode turns it on when it is cold, cooling mode when it is hot.
 
