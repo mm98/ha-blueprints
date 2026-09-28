@@ -25,7 +25,7 @@ More about blueprints: [Using automation blueprints](https://www.home-assistant.
 
 ## Appliance cycle counter
 
-[![Import the Appliance cycle counter blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fmm98%2Fappliance_cycle_counter.yaml)
+[![Import the Appliance cycle counter blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fappliance_cycle_counter.yaml)
 
 Counts finished cycles of an appliance and sends a notification to your phone when a limit is reached. Use it to remember maintenance: clean the washing machine every 30 washes, replace the vacuum filter after 50 runs or descale the coffee machine after 200 brews.
 
@@ -89,7 +89,7 @@ A washing machine whose state entity goes from `running` to `off` when a wash is
 
 ## Button cycle brightness
 
-[![Import the Button cycle brightness blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fmm98%2Fbutton_cycle_brightness.yaml)
+[![Import the Button cycle brightness blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fbutton_cycle_brightness.yaml)
 
 Steps the brightness of one or more lights with a single button. Each press moves one step up until the lights are at full brightness, then one step down, then off, and around again. A short tap turns the lights off, or on when they are off.
 
@@ -153,7 +153,7 @@ On a Hue wall switch module, set the switch type to **Push button** in the Hue a
 
 ## Motion-triggered adaptive light
 
-[![Import the Motion-triggered adaptive light blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fmm98%2Fmotion_ambient_nightmode_lights.yaml)
+[![Import the Motion-triggered adaptive light blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fmotion_ambient_nightmode_lights.yaml)
 
 Turns a light on when motion is detected and the room is dark enough, and off again when the motion stops. At night it can use a lower brightness and a warmer color, so the light does not dazzle you. Other lights, switches or whole areas can follow along.
 
