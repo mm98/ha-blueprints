@@ -1,0 +1,418 @@
+blueprint:
+  name: Motion-Triggered Adaptive Light
+  description: |
+    Controls a light based on motion, ambient brightness, and color temperature. Activates the light when motion is detected and ambient light is below the threshold, and turns it off after motion stops or ambient light rises. Supports optional night mode with lower brightness, blocking entities, and automatic light reset after Home Assistant restart or power recovery.
+
+    <details>
+    <summary><strong>🧾 Version History</strong></summary>
+
+    **v1.2.0**: Additional Targets
+    - Added optional `additional_targets` input using a target selector (entities, devices, or areas).
+    - Additional targets are turned on/off alongside the primary light when conditions are met.
+    - Uses `homeassistant.turn_on` / `homeassistant.turn_off` for broad entity compatibility.
+
+    **v1.1.5**: Inline Comments and Improved Documentation
+    - Added detailed inline comments for conditions and actions for improved readability and maintainability.
+    - Updated blueprint description and structure for clarity when "Take control" is selected in Home Assistant.
+    - No functional logic changes — purely documentation and usability improvements.
+
+    **v1.1.4**: Motion Condition
+    - Added a motion condition that turns the light off when ambient is above the threshold and light is already on.
+    - Improves responsiveness and prevents unwanted light stay-on in edge lighting conditions.
+
+    **v1.1.3**: Null Checking in Wait Triggers
+    - Added null checks in `wait_for_trigger` templates to prevent "UndefinedError" exceptions in Home Assistant.
+    - Addresses a known HA issue where template triggers can fail if entity references are not yet available.
+
+    **v1.1.2**: Manual Light-Off Handling
+    - If someone turns off the light manually while it is on, the automation will stop and wait for the next motion before turning the light on again.
+
+    **v1.1.0**: Night Mode Added
+    - Night Mode dims the light and changes its color temperature during night hours.
+    - Night Mode can either follow a set schedule (start and end time) or use an optional night sensor.
+    - You can choose how bright the light is and its color warmth during night mode.
+
+    **v1.0.0**: Initial Release
+    - Light turns on when motion is detected and it is dark enough, and turns off after motion stops or ambient brightness rises.
+    - Light also turns off automatically after Home Assistant restarts or after a power outage.
+
+    </details>
+
+  source_url: https://github.com/mm98/ha-blueprints/blob/main/blueprints/automation/mm98/motion_ambient_nightmode_lights.yaml
+  domain: automation
+  author: mm98
+  homeassistant:
+    min_version: "2025.10.0"
+
+  input:
+    # Motion sensor input
+    motion_entity:
+      name: Motion Sensor
+      description: The motion sensor used to detect movement and trigger the automation.
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: motion
+
+    # Light sensor input
+    light_entity:
+      name: Motion-Activated Light
+      description: The light that will be turned on when motion is detected and turned off after motion stops or ambient brightness increases.
+      selector:
+        entity:
+          domain: light
+
+    # Additional targets input
+    additional_targets:
+      name: Additional Targets
+      description: Optional additional entities, devices, or areas to turn on/off alongside the light.
+      default: {}
+      selector:
+        target: {}
+
+    # Ambient light sensor input
+    ambient_sensor_entity:
+      name: Ambient Light Sensor
+      description: The sensor that measures the surrounding light level to determine if it is dark enough to turn on the light.
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+
+    # Light settings
+    light_section:
+      name: Light
+      icon: mdi:lightbulb-outline
+      collapsed: true
+      input:
+        brightness_level:
+          name: Brightness
+          description: The brightness level that the light should reach when it turns on.
+          default: 20
+          selector:
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: "%"
+        transition_duration:
+          name: Transition
+          description: Time it takes for the light to fade on or off.
+          default: 2
+          selector:
+            number:
+              min: 0
+              max: 60
+              unit_of_measurement: seconds
+        ambient_threshold:
+          name: Ambient Threshold
+          description: The light will only turn on when ambient brightness is below this level.
+          default: 4
+          selector:
+            number:
+              min: 0
+              max: 50
+              unit_of_measurement: lx
+        color_temperature:
+          name: Color Temperature
+          description: The color temperature in Kelvin applied during normal mode.
+          default: 2500
+          selector:
+            color_temp:
+              min: 1500
+              max: 7000
+              unit: kelvin
+
+    # Night mode light settings
+    night_mode_section:
+      name: Night mode
+      icon: mdi:weather-night
+      collapsed: true
+      input:
+        night_enabled:
+          name: Night Mode
+          description: Activates reduced brightness during night hours.
+          default: false
+          selector:
+            boolean: {}
+        night_time_start:
+          name: Start Time
+          description: Time when night mode begins.
+          default: "23:00:00"
+          selector:
+            time: {}
+        night_time_end:
+          name: End Time
+          description: Time when night mode ends and normal light settings resume.
+          default: "05:00:00"
+          selector:
+            time: {}
+        night_sensor_entity:
+          name: Night Sensor
+          description: Optional binary sensor controlling night mode. Night mode is active when this sensor is on or true.
+          default: null
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
+                - switch
+        night_brightness_level:
+          name: Brightness
+          description: Light brightness level during night mode when motion is detected.
+          default: 10
+          selector:
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: "%"
+        night_color_temperature:
+          name: Color Temperature
+          description: Color temperature in Kelvin during night mode.
+          default: 2000
+          selector:
+            color_temp:
+              min: 1500
+              max: 7000
+              unit: kelvin
+
+    # Timing settings
+    timing_section:
+      name: Timing
+      icon: mdi:timer-outline
+      collapsed: true
+      input:
+        motion_grace_period:
+          name: Motion Grace Period
+          description: How long the light stays on after motion stops.
+          default: "00:02:00"
+          selector:
+            time: {}
+
+    # Optional blocking entity to disable automation temporarily
+    blocking_section:
+      name: Blocking
+      icon: mdi:cancel
+      collapsed: true
+      input:
+        blocking_entity_on:
+          name: Blocking Entity (on / true)
+          description: Skip automation if this entity is on or true, e.g., Sleep mode or manual light control.
+          default: null
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
+                - switch
+        blocking_entity_off:
+          name: Blocking Entity (off / false)
+          description: Skip automation if this entity is off or false, e.g., Sleep mode or manual light control.
+          default: null
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
+                - switch
+
+    # Restart handling settings
+    restart_section:
+      name: Restart
+      icon: mdi:restart
+      collapsed: true
+      input:
+        reset_light_on_restart:
+          name: Turn Off Light After Restart
+          description: Turns off the light automatically when Home Assistant restarts or after a power loss to prevent it from staying on unexpectedly.
+          default: true
+          selector:
+            boolean: {}
+
+    # Debug handling settings
+    debug_section:
+      name: Debug
+      icon: mdi:content-save-settings-outline
+      collapsed: true
+      input:
+        log_to_activity:
+          name: Log to Activity
+          description: Logs an activity entry when all conditions are met; includes relevant information such as mode, brightness, color temperature, ambient reading and thresholds.
+          default: false
+          selector:
+            boolean: {}
+
+mode: restart
+max_exceeded: silent
+# trace:
+#   stored_traces: 50
+
+variables:
+  ambient_sensor_entity: !input ambient_sensor_entity
+  ambient_threshold: !input ambient_threshold
+  blocking_entity_on: !input blocking_entity_on
+  blocking_entity_off: !input blocking_entity_off
+  brightness_level: !input brightness_level
+  color_temperature: !input color_temperature
+  log_to_activity: !input log_to_activity
+  night_enabled: !input night_enabled
+  night_sensor_entity: !input night_sensor_entity
+  night_time_start: !input night_time_start
+  night_time_end: !input night_time_end
+  night_brightness_level: !input night_brightness_level
+  night_color_temperature: !input night_color_temperature
+  reset_light_on_restart: !input reset_light_on_restart
+  additional_targets: !input additional_targets
+
+  ambient_exceeded_threshold: >
+    {{ states(ambient_sensor_entity) | int(0) >= ambient_threshold | int(0) }}
+  blocking_entity_on_allowed: >
+    {{ blocking_entity_on is none or states(blocking_entity_on) not in ["on", "true"] }}
+  blocking_entity_off_allowed: >
+    {{ blocking_entity_off is none or states(blocking_entity_off) not in ["off", "false"] }}
+  is_nightmode: >
+    {% if night_enabled == true %}
+      {% if night_sensor_entity is not none %}
+        {{ states(night_sensor_entity) in ["on", "true"] }}
+      {% else %}
+        {% set date_now = now() %}
+        {% set date_start = today_at(night_time_start) %}
+        {% set date_stop = today_at(night_time_end) %}
+        {% if date_stop <= date_start %}{% set date_stop = date_stop + timedelta(days=1) %}{% endif %}
+        {{ date_start <= date_now <= date_stop }}
+      {% endif %}
+    {% else %}
+      false
+    {% endif %}
+  brightness_effective: >
+    {{ night_brightness_level if is_nightmode == true else brightness_level }}
+  color_temperature_effective: >
+    {{ night_color_temperature if is_nightmode == true else color_temperature }}
+
+triggers:
+  # Trigger when motion turns on
+  - platform: state
+    entity_id: !input motion_entity
+    from: "off"
+    to: "on"
+    id: motion
+
+  # Trigger when Home Assistant starts
+  - platform: homeassistant
+    event: start
+    id: restarted
+
+conditions:
+  - condition: or
+    conditions:
+      # When motion detected, ambient below threshold, and no blocking entity active
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: motion
+          - condition: numeric_state
+            entity_id: !input ambient_sensor_entity
+            below: !input ambient_threshold
+          - alias: "If Blocking entities are satisfied"
+            condition: template
+            value_template: >
+              {{ blocking_entity_on_allowed == true and blocking_entity_off_allowed == true }}
+        alias: If Motion detected, ambient below threshold and no blocking
+
+      # When motion detected, light already on, and ambient brightness above or equal to threshold
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: motion
+          - alias: "If Ambient is equal to or above threshold"
+            condition: template
+            value_template: >
+              {{ ambient_exceeded_threshold == true }}
+          - condition: state
+            entity_id: !input light_entity
+            state: "on"
+        alias: If Motion detected, ambient equal to or above threshold and light already on
+
+      # When Home Assistant restarts and reset light option is enabled
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: restarted
+          - alias: "If Light reset enabled"
+            condition: template
+            value_template: >
+              {{ reset_light_on_restart == true }}
+        alias: If Home Assistant restarted
+
+actions:
+  # Log a debug entry if logging is enabled
+  - alias: "If activity logging is enabled"
+    if:
+      - condition: template
+        value_template: >
+          {{ log_to_activity == true }}
+    then:
+      - action: logbook.log
+        data:
+          name: Motion-Triggered Adaptive Light
+          message: >
+            💡 mode: {{ "night" if is_nightmode == true else "normal" }}, brightness: {{ brightness_effective }}%, color temp: {{ color_temperature_effective }} (kelvin), ambient light: {{ states(ambient_sensor_entity) }} (lux), ambient threshold: {{ ambient_threshold }} (lux), ambient exceeded: {{ ambient_exceeded_threshold == true }}, night: from {{ today_at(night_time_start).strftime("%-H:%M") }} to {{ today_at(night_time_end).strftime("%-H:%M") }}
+          entity_id: !input ambient_sensor_entity
+
+  # Motion trigger branch: turns on light if dark enough
+  - alias: "If triggered by motion"
+    if:
+      - condition: trigger
+        id: motion
+    then:
+      - alias: "If Ambient light is below threshold"
+        if:
+          - condition: numeric_state
+            entity_id: !input ambient_sensor_entity
+            below: !input ambient_threshold
+        then:
+          # Turn on the light with effective brightness and color temperature (night/day aware)
+          - service: light.turn_on
+            data:
+              brightness_pct: >
+                {{ brightness_effective }}
+              color_temp_kelvin: >
+                {{ color_temperature_effective }}
+              transition: !input transition_duration
+            target:
+              entity_id: !input light_entity
+
+          # Turn on additional targets if defined
+          - alias: "Turn on additional targets"
+            if:
+              - condition: template
+                value_template: >
+                  {{ additional_targets | length > 0 }}
+            then:
+              - service: homeassistant.turn_on
+                target: !input additional_targets
+
+          # Wait for motion to stop before turning off the light
+          - alias: "Wait for motion to end, before turning off light"
+            wait_for_trigger:
+              - platform: state
+                entity_id: !input motion_entity
+                from: "on"
+                to: "off"
+                for: !input motion_grace_period
+
+  # Always turn off light at the end, ensuring no light remains on
+  - service: light.turn_off
+    data:
+      transition: !input transition_duration
+    target:
+      entity_id: !input light_entity
+
+  # Turn off additional targets if defined
+  - alias: "Turn off additional targets"
+    if:
+      - condition: template
+        value_template: >
+          {{ additional_targets | length > 0 }}
+    then:
+      - service: homeassistant.turn_off
+        target: !input additional_targets

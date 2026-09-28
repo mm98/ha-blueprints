@@ -1,0 +1,420 @@
+blueprint:
+  name: Appliance Cycle Counter & Notification
+  description: |
+    Counts completed cycles of an appliance (washing machine, dishwasher, vacuum, dryer, etc.) and sends a phone notification when a configurable upper limit is reached. Useful for tracking maintenance intervals — e.g. clean the washing machine every 30 cycles, replace a vacuum filter after N runs, or service a coffee machine after a fixed number of brews.
+
+    **Two supported configurations:**
+
+    - **Counter helper + state transitions** — for devices that *do not* expose a built-in cycle counter. Create a Counter helper (or an `input_number`) and point this blueprint at the appliance's state sensor, defining the transition that marks a completed cycle (e.g. `running` → `off`). The blueprint increments the helper on each transition and notifies when the limit is hit.
+
+    - **Built-in counter sensor** — for devices that already expose a cycle count (some vacuums, some smart washers). Point the *Counter Entity* at that sensor and leave the *State Entity* empty. The blueprint just monitors the sensor and notifies when it reaches the limit.
+
+    **Recommended setup — create a Counter helper:**
+
+    Go to **Settings → Devices & Services → Helpers → Create Helper → Counter** and configure it as follows:
+    - **Name**: e.g. "Washing Machine Cycles"
+    - **Initial value**: 0
+    - **Step**: 1
+    - **Minimum**: 0
+
+    Select that helper as the *Counter Entity* below, then configure the *State Entity* and transition states to match your appliance.
+
+    **Notification message variables:**
+
+    The notification message supports Jinja templates with these variables:
+    - `{{ count }}` — current counter value
+    - `{{ limit }}` — configured upper limit
+
+    <details>
+    <summary><strong>🧾 Version History</strong></summary>
+
+    **v1.0.0**: Initial Release
+    - Counts state transitions of an appliance and sends a mobile notification when a configurable upper limit is reached.
+    - Supports both Counter / input_number helpers (auto-incremented by the blueprint) and built-in counter sensors (read-only, monitored for the threshold).
+    - Optional auto-reset of the counter when the notification is sent, and a re-notify interval for milestone reminders past the limit.
+    - Customisable notification title and message with `{{ count }}` and `{{ limit }}` template variables.
+    - Optional activity log for debugging cycle completions and counter updates.
+
+    </details>
+
+  source_url: https://github.com/mm98/ha-blueprints/blob/main/blueprints/automation/mm98/appliance_cycle_counter.yaml
+  domain: automation
+  author: mm98
+  homeassistant:
+    min_version: "2025.10.0"
+
+  input:
+    # The entity whose value is compared against the upper limit
+    counter_entity:
+      name: Counter Entity
+      description: >
+        The entity whose value is compared against the upper limit. Use a Counter helper or
+        input_number helper for devices without a built-in counter (the blueprint will
+        increment it on each cycle), or a sensor for devices that expose their own cycle
+        count (the blueprint just monitors it).
+      selector:
+        entity:
+          domain:
+            - counter
+            - input_number
+            - sensor
+
+    # Mobile device for push notifications
+    notify_device:
+      name: Notification Device
+      description: The mobile device (Home Assistant Companion app) that will receive the notification.
+      selector:
+        device:
+          integration: mobile_app
+
+    # Notification title shown to the user
+    notification_title:
+      name: Notification Title
+      description: Title shown on the notification when the upper limit is reached.
+      default: "🔧 Maintenance Reminder"
+      selector:
+        text: {}
+
+    # Notification body — supports Jinja templates with count and limit
+    notification_message:
+      name: Notification Message
+      description: >
+        Body text shown on the notification. Supports Jinja templates — use `{{ count }}` for
+        the current counter value and `{{ limit }}` for the configured upper limit. Example:
+        "Washing machine has run {{ count }} cycles — time for a cleaning cycle!"
+      default: "Counter reached {{ count }} of {{ limit }} cycles. Maintenance is required."
+      selector:
+        text:
+          multiline: true
+
+    # State transition counting (skip when using a built-in counter sensor)
+    transition_section:
+      name: State Transition Counting
+      icon: mdi:state-machine
+      collapsed: true
+      input:
+        state_entity:
+          name: State Entity (optional)
+          description: >
+            The entity whose state transitions count as a completed cycle (e.g. a washing
+            machine state sensor). Leave empty when the Counter Entity is a built-in sensor
+            that the device updates itself.
+          default:
+          selector:
+            entity: {}
+
+        from_state:
+          name: From State
+          description: >
+            The state the entity must transition *from* to count as a cycle (e.g. `running`,
+            `on`, `cleaning`). Case-sensitive — must match the entity's reported state exactly.
+          default: "running"
+          selector:
+            text: {}
+
+        to_state:
+          name: To State
+          description: >
+            The state the entity must transition *to* to count as a cycle (e.g. `off`, `idle`,
+            `finished`, `docked`). Case-sensitive — must match the entity's reported state exactly.
+          default: "off"
+          selector:
+            text: {}
+
+    # Limit and re-notify settings
+    limits_section:
+      name: Limits & Thresholds
+      icon: mdi:counter
+      collapsed: true
+      input:
+        count_limit:
+          name: Upper Limit
+          description: >
+            Notify when the counter reaches this value. For example, 30 for a washing machine
+            cleaning cycle reminder.
+          default: 30
+          selector:
+            number:
+              min: 1
+              max: 10000
+              step: 1
+              mode: box
+
+        renotify_interval:
+          name: Re-notify Interval
+          description: >
+            If the counter is not reset and keeps incrementing past the limit, send another
+            notification every N additional counts. Set to 0 to notify only once when the
+            limit is first crossed.
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 1000
+              step: 1
+              mode: box
+
+    # Optional auto-reset of the counter after notification
+    reset_section:
+      name: Reset
+      icon: mdi:restart
+      collapsed: true
+      input:
+        reset_on_notify:
+          name: Reset Counter After Notification
+          description: >
+            When enabled, the Counter helper (or input_number) is automatically reset to 0
+            after the notification is sent — useful so the next cycle begins a fresh count.
+            Has no effect when the Counter Entity is a built-in sensor (those cannot be reset
+            by this blueprint).
+          default: false
+          selector:
+            boolean: {}
+
+    # Debug handling settings
+    debug_section:
+      name: Debug
+      icon: mdi:content-save-settings-outline
+      collapsed: true
+      input:
+        log_to_activity:
+          name: Log to Activity
+          description: >
+            Logs an activity entry on every cycle completion and counter update; includes
+            current count, limit and whether a notification was sent.
+          default: false
+          selector:
+            boolean: {}
+
+mode: queued
+max: 10
+max_exceeded: silent
+# trace:
+#   stored_traces: 50
+
+# Trigger variables are computed once at automation load and — unlike `variables:` —
+# are available to triggers (including template triggers). Static input values that
+# the triggers need to reference must live here, otherwise Jinja in a template trigger
+# raises `UndefinedError` at HA startup.
+trigger_variables:
+  counter_entity: !input counter_entity
+  state_entity: !input state_entity
+  from_state: !input from_state
+  to_state: !input to_state
+  count_limit: !input count_limit
+  renotify_interval: !input renotify_interval
+  reset_on_notify: !input reset_on_notify
+  log_to_activity: !input log_to_activity
+
+variables:
+  # True when a state entity has been configured for transition counting.
+  has_state_entity: >
+    {{ state_entity not in (none, '', 'unknown', 'unavailable') }}
+
+  # Domain prefix of the counter entity (counter / input_number / sensor) —
+  # used to pick the correct increment / reset service below.
+  counter_domain: >
+    {{ counter_entity.split('.')[0] }}
+
+  # Current counter value, exposed to the notification message as {{ count }}.
+  count: >
+    {{ states(counter_entity) | int(0) }}
+
+  # Configured upper limit, exposed to the notification message as {{ limit }}.
+  limit: >
+    {{ count_limit | int }}
+
+  # Previous counter value — only meaningful when the counter_changed trigger fired.
+  # Falls back to the current value so the milestone-comparison logic below is safe
+  # to evaluate on the state_cycle_completed branch too.
+  prev_count: >
+    {% if trigger is defined and trigger.id == 'counter_changed' and trigger.from_state is not none %}
+      {{ trigger.from_state.state | int(0) }}
+    {% else %}
+      {{ count }}
+    {% endif %}
+
+  # Milestone index for the re-notify logic.
+  # A milestone exists at: limit, limit + interval, limit + 2*interval, …
+  # Index -1 means below the limit; 0 means at the limit; N means N intervals past it.
+  current_milestone_index: >
+    {% set interval = renotify_interval | int(0) %}
+    {% if count >= limit %}
+      {% if interval > 0 %}
+        {{ ((count - limit) // interval) | int }}
+      {% else %}
+        0
+      {% endif %}
+    {% else %}
+      {{ -1 }}
+    {% endif %}
+  prev_milestone_index: >
+    {% set interval = renotify_interval | int(0) %}
+    {% if prev_count >= limit %}
+      {% if interval > 0 %}
+        {{ ((prev_count - limit) // interval) | int }}
+      {% else %}
+        0
+      {% endif %}
+    {% else %}
+      {{ -1 }}
+    {% endif %}
+
+  # True when at least one new milestone boundary was crossed by this counter update.
+  should_notify: >
+    {{ current_milestone_index | int(-1) > prev_milestone_index | int(-1) }}
+
+triggers:
+  # Fire when the counter entity changes value. Handles both helper-driven and
+  # device-driven counters; the threshold check happens in the counter_changed branch.
+  - platform: state
+    entity_id: !input counter_entity
+    id: counter_changed
+
+  # Fire when the configured state entity becomes the "to" state. Uses a template
+  # trigger so the blueprint loads cleanly even when State Entity is left empty —
+  # the template short-circuits to false and the trigger never fires.
+  - platform: template
+    id: state_cycle_completed
+    value_template: >-
+      {{ state_entity not in (none, '', 'unknown', 'unavailable')
+         and states(state_entity) == to_state }}
+
+conditions: []
+
+actions:
+  # Branch on which trigger fired.
+  - choose:
+      # Branch A: state transition completed → increment the helper counter.
+      # The previous state must equal `from_state` so unrelated transitions
+      # (e.g. `idle` → `off` when we only care about `running` → `off`) are ignored.
+      - alias: "If state transition completed, increment counter"
+        conditions:
+          - condition: trigger
+            id: state_cycle_completed
+          - condition: template
+            value_template: >
+              {{ has_state_entity == true
+                 and trigger.from_state is not none
+                 and trigger.from_state.state == from_state }}
+        sequence:
+          - alias: "Log cycle completion if enabled"
+            if:
+              - condition: template
+                value_template: >
+                  {{ log_to_activity == true }}
+            then:
+              - service: logbook.log
+                data:
+                  name: Appliance Cycle Counter
+                  message: >
+                    🔁 cycle completed ({{ from_state }} → {{ to_state }}),
+                    counter before increment: {{ count }} / {{ limit }}
+                  entity_id: "{{ state_entity }}"
+
+          - alias: "Increment the counter using the service for its domain"
+            choose:
+              - alias: "If counter is a Counter helper"
+                conditions:
+                  - condition: template
+                    value_template: >
+                      {{ counter_domain == 'counter' }}
+                sequence:
+                  - service: counter.increment
+                    target:
+                      entity_id: !input counter_entity
+
+              - alias: "If counter is an input_number helper"
+                conditions:
+                  - condition: template
+                    value_template: >
+                      {{ counter_domain == 'input_number' }}
+                sequence:
+                  - service: input_number.set_value
+                    target:
+                      entity_id: !input counter_entity
+                    data:
+                      value: "{{ count + 1 }}"
+            # When counter_entity is a sensor, no increment is performed — the device
+            # owns the sensor value. The counter_changed branch below handles the
+            # threshold check on the next sensor update.
+
+      # Branch B: counter value changed → check threshold and notify if crossed.
+      - alias: "If counter changed, check threshold and notify"
+        conditions:
+          - condition: trigger
+            id: counter_changed
+          - alias: "Both states report valid numbers"
+            condition: template
+            value_template: >
+              {{ trigger.from_state is not none
+                 and trigger.to_state is not none
+                 and trigger.from_state.state not in ["unknown", "unavailable", "none"]
+                 and trigger.to_state.state not in ["unknown", "unavailable", "none"] }}
+          - alias: "Only act when the counter increased (ignore manual resets)"
+            condition: template
+            value_template: >
+              {{ count > prev_count }}
+        sequence:
+          - alias: "Log counter update if enabled"
+            if:
+              - condition: template
+                value_template: >
+                  {{ log_to_activity == true }}
+            then:
+              - service: logbook.log
+                data:
+                  name: Appliance Cycle Counter
+                  message: >
+                    🔢 count: {{ count }} (was {{ prev_count }}), limit: {{ limit }},
+                    milestone index: {{ current_milestone_index }}
+                    (was {{ prev_milestone_index }}), should_notify: {{ should_notify }}
+                  entity_id: !input counter_entity
+
+          - alias: "If a new milestone was crossed, send notification"
+            if:
+              - condition: template
+                value_template: >
+                  {{ should_notify == true }}
+            then:
+              - alias: "Send mobile notification"
+                domain: mobile_app
+                type: notify
+                device_id: !input notify_device
+                title: !input notification_title
+                # `!input` substitutes the user's template *string* directly into the
+                # message field. HA then renders that string as a Jinja template against
+                # the automation's variable scope, so `{{ count }}` and `{{ limit }}` in
+                # the message resolve correctly. Using `"{{ notification_message }}"`
+                # here instead would only render once — outputting the user's literal
+                # template text without expanding the inner `{{ ... }}` placeholders.
+                message: !input notification_message
+
+              - alias: "Reset the counter if enabled (and the counter is a writable helper)"
+                if:
+                  - condition: template
+                    value_template: >
+                      {{ reset_on_notify == true }}
+                then:
+                  - choose:
+                      - alias: "Reset Counter helper to 0"
+                        conditions:
+                          - condition: template
+                            value_template: >
+                              {{ counter_domain == 'counter' }}
+                        sequence:
+                          - service: counter.reset
+                            target:
+                              entity_id: !input counter_entity
+
+                      - alias: "Reset input_number helper to 0"
+                        conditions:
+                          - condition: template
+                            value_template: >
+                              {{ counter_domain == 'input_number' }}
+                        sequence:
+                          - service: input_number.set_value
+                            target:
+                              entity_id: !input counter_entity
+                            data:
+                              value: 0
