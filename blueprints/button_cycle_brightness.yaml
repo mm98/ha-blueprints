@@ -1,5 +1,5 @@
 blueprint:
-  name: Button Cycle Brightness (Up then Down)
+  name: Button Cycle Brightness
   description: |
     Cycles the brightness of one or more lights on each button press: step up to 100%, step back down, off, repeat. Brightness snaps to multiples of the configured step. A separate off event (short release by default) turns the lights off at any time and doubles as an on-toggle when they're already off. Works with Hue / Matter / Zigbee2MQTT button entities that expose an `event_type` attribute.
 
