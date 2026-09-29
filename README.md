@@ -54,6 +54,7 @@ Turns a light on with motion when the room is dark enough, and off again when th
 - Needs a motion sensor, a light sensor that measures lux, and a light with brightness and color temperature.
 - Night mode uses a lower brightness and a warmer color, on a schedule or with a night sensor.
 - Blocking entities, like a sleep mode helper, keep the light off. Other lights, switches or areas can follow along.
+- An optional setting leaves a light alone that was turned on by hand, so it is not adjusted or turned off when motion is detected.
 - After a Home Assistant restart the light turns off, so it does not stay on by mistake.
 
 ## Temperature-controlled switch
