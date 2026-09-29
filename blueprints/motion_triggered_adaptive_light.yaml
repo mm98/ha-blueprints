@@ -227,7 +227,7 @@ blueprint:
       input:
         keep_manual_light_on:
           name: Keep Manually Turned On Light
-          description: If the light is already on when motion is detected and it was not turned on by an automation (for example the wall switch, the Home Assistant app or a voice command), leave it alone. It is not adjusted and not turned off. Wall switches that only report their state to Home Assistant may not be recognized as manual.
+          description: Leaves the light alone if it was turned on manually, so it is not adjusted or turned off when motion is detected.
           default: false
           selector:
             boolean: {}
