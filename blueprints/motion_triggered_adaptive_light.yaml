@@ -6,6 +6,10 @@ blueprint:
     <details>
     <summary><strong>🧾 Version History</strong></summary>
 
+    **v1.3.0**: Manual Control
+    - Added optional `keep_manual_light_on` input (off by default, so existing behavior is unchanged).
+    - When enabled, a light that is already on when motion is detected and was not turned on by an automation is left alone: it is not adjusted and not turned off.
+
     **v1.2.0**: Additional Targets
     - Added optional `additional_targets` input using a target selector (entities, devices, or areas).
     - Additional targets are turned on/off alongside the primary light when conditions are met.
@@ -215,6 +219,19 @@ blueprint:
                 - input_boolean
                 - switch
 
+    # Manual control settings
+    manual_section:
+      name: Manual control
+      icon: mdi:hand-back-right-outline
+      collapsed: true
+      input:
+        keep_manual_light_on:
+          name: Keep Manually Turned On Light
+          description: If the light is already on when motion is detected and it was not turned on by an automation (for example the wall switch, the Home Assistant app or a voice command), leave it alone. It is not adjusted and not turned off. Wall switches that only report their state to Home Assistant may not be recognized as manual.
+          default: false
+          selector:
+            boolean: {}
+
     # Restart handling settings
     restart_section:
       name: Restart
@@ -262,7 +279,11 @@ variables:
   night_color_temperature: !input night_color_temperature
   reset_light_on_restart: !input reset_light_on_restart
   additional_targets: !input additional_targets
+  keep_manual_light_on: !input keep_manual_light_on
+  light_entity: !input light_entity
 
+  light_turned_on_manually: >
+    {{ is_state(light_entity, "on") and states[light_entity].context.parent_id is none }}
   ambient_exceeded_threshold: >
     {{ states(ambient_sensor_entity) | int(0) >= ambient_threshold | int(0) }}
   blocking_entity_on_allowed: >
@@ -302,6 +323,12 @@ triggers:
     id: restarted
 
 conditions:
+  # Leave a manually turned on light alone when motion is detected, if enabled
+  - alias: "If manual light should be left alone"
+    condition: template
+    value_template: >
+      {{ not (trigger.id == "motion" and keep_manual_light_on == true and light_turned_on_manually == true) }}
+
   - condition: or
     conditions:
       # When motion detected, ambient below threshold, and no blocking entity active
