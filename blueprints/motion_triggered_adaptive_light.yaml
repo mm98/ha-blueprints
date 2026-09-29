@@ -1,14 +1,14 @@
 blueprint:
   name: Motion-Triggered Adaptive Light
   description: |
-    Controls a light based on motion, ambient brightness, and color temperature. Activates the light when motion is detected and ambient light is below the threshold, and turns it off after motion stops or ambient light rises. Supports optional night mode with lower brightness, blocking entities, and automatic light reset after Home Assistant restart or power recovery.
+    Controls a light based on motion, ambient brightness, and color temperature. Activates the light when motion is detected and ambient light is below the threshold, and turns it off after motion stops or ambient light rises. Supports optional night mode with lower brightness, blocking entities, leaving manually turned on lights alone, and automatic light reset after Home Assistant restart or power recovery.
 
     <details>
     <summary><strong>🧾 Version History</strong></summary>
 
     **v1.3.0**: Manual Control
     - Added optional `keep_manual_light_on` input (off by default, so existing behavior is unchanged).
-    - When enabled, a light that is already on when motion is detected and was not turned on by an automation is left alone: it is not adjusted and not turned off.
+    - When enabled, a light that was turned on manually is left alone when motion is detected.
 
     **v1.2.0**: Additional Targets
     - Added optional `additional_targets` input using a target selector (entities, devices, or areas).
@@ -221,12 +221,12 @@ blueprint:
 
     # Manual control settings
     manual_section:
-      name: Manual control
+      name: Manual
       icon: mdi:hand-back-right-outline
       collapsed: true
       input:
         keep_manual_light_on:
-          name: Keep Manually Turned On Light
+          name: Keep Manual Light On
           description: Leaves the light alone if it was turned on manually, so it is not adjusted or turned off when motion is detected.
           default: false
           selector:
