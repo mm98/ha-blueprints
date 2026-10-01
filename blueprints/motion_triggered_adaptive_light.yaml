@@ -6,6 +6,11 @@ blueprint:
     <details>
     <summary><strong>🧾 Version History</strong></summary>
 
+    **v1.4.0**: Multiple Blocking Entities
+    - Both blocking inputs now accept any number of entities.
+    - The automation is skipped if any of the "on" entities is on, or any of the "off" entities is off.
+    - Existing automations with a single blocking entity keep working without changes.
+
     **v1.3.0**: Manual Control
     - Added optional `keep_manual_light_on` input (off by default, so existing behavior is unchanged).
     - When enabled, a light that was turned on manually is left alone when motion is detected.
@@ -192,28 +197,30 @@ blueprint:
           selector:
             time: {}
 
-    # Optional blocking entity to disable automation temporarily
+    # Optional blocking entities to disable automation temporarily
     blocking_section:
       name: Blocking
       icon: mdi:cancel
       collapsed: true
       input:
         blocking_entity_on:
-          name: Blocking Entity (on / true)
-          description: Skip automation if this entity is on or true, e.g., Sleep mode or manual light control.
-          default: null
+          name: Blocking Entities (on / true)
+          description: Skip automation if any of these entities is on or true, e.g., Sleep mode or manual light control.
+          default: []
           selector:
             entity:
+              multiple: true
               domain:
                 - binary_sensor
                 - input_boolean
                 - switch
         blocking_entity_off:
-          name: Blocking Entity (off / false)
-          description: Skip automation if this entity is off or false, e.g., Sleep mode or manual light control.
-          default: null
+          name: Blocking Entities (off / false)
+          description: Skip automation if any of these entities is off or false, e.g., Sleep mode or manual light control.
+          default: []
           selector:
             entity:
+              multiple: true
               domain:
                 - binary_sensor
                 - input_boolean
@@ -286,10 +293,15 @@ variables:
     {{ is_state(light_entity, "on") and states[light_entity].context.parent_id is none }}
   ambient_exceeded_threshold: >
     {{ states(ambient_sensor_entity) | int(0) >= ambient_threshold | int(0) }}
+  # Blocking inputs may hold a list, a single entity (older automations) or nothing
+  blocking_entities_on: >
+    {{ [] if blocking_entity_on is none else ([blocking_entity_on] if blocking_entity_on is string else blocking_entity_on) }}
+  blocking_entities_off: >
+    {{ [] if blocking_entity_off is none else ([blocking_entity_off] if blocking_entity_off is string else blocking_entity_off) }}
   blocking_entity_on_allowed: >
-    {{ blocking_entity_on is none or states(blocking_entity_on) not in ["on", "true"] }}
+    {{ blocking_entities_on | select("is_state", ["on", "true"]) | list | count == 0 }}
   blocking_entity_off_allowed: >
-    {{ blocking_entity_off is none or states(blocking_entity_off) not in ["off", "false"] }}
+    {{ blocking_entities_off | select("is_state", ["off", "false"]) | list | count == 0 }}
   is_nightmode: >
     {% if night_enabled == true %}
       {% if night_sensor_entity is not none %}
