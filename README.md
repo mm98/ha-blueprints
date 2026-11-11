@@ -56,6 +56,7 @@ Turns a light on with motion when the room is dark enough, and off again when th
 - Blocking entities, like a sleep mode helper, keep the light off. You can add as many as you like. Other lights, switches or areas can follow along.
 - An optional setting leaves a manually turned on light alone.
 - After a Home Assistant restart the light turns off, so it does not stay on by mistake.
+- Each motion session shows up once in the activity log, no matter how often the sensor sees motion while the light is on.
 
 ## Temperature-controlled switch
 

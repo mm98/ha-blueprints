@@ -6,6 +6,12 @@ blueprint:
     <details>
     <summary><strong>🧾 Version History</strong></summary>
 
+    **v1.5.0**: Fewer Activity Entries
+    - Runs in `single` mode instead of `restart`, so new motion while the light is on no longer starts a new run.
+    - You now get one "Triggered" entry in the activity log per motion session instead of one for every motion blip.
+    - New motion during a session still runs the same checks as before: it refreshes brightness and color (so night mode still kicks in), respects blocking entities and manually turned on lights, and turns the light off if the room is bright enough.
+    - The debug activity entry is only written when a session starts.
+
     **v1.4.0**: Multiple Blocking Entities
     - Both blocking inputs now accept any number of entities.
     - The automation is skipped if any of the "on" entities is on, or any of the "off" entities is off.
@@ -265,7 +271,7 @@ blueprint:
           selector:
             boolean: {}
 
-mode: restart
+mode: single
 max_exceeded: silent
 # trace:
 #   stored_traces: 50
@@ -289,20 +295,20 @@ variables:
   keep_manual_light_on: !input keep_manual_light_on
   light_entity: !input light_entity
 
-  light_turned_on_manually: >
+  light_turned_on_manually: &light_turned_on_manually >
     {{ is_state(light_entity, "on") and states[light_entity].context.parent_id is none }}
-  ambient_exceeded_threshold: >
+  ambient_exceeded_threshold: &ambient_exceeded_threshold >
     {{ states(ambient_sensor_entity) | int(0) >= ambient_threshold | int(0) }}
   # Blocking inputs may hold a list, a single entity (older automations) or nothing
   blocking_entities_on: >
     {{ [] if blocking_entity_on is none else ([blocking_entity_on] if blocking_entity_on is string else blocking_entity_on) }}
   blocking_entities_off: >
     {{ [] if blocking_entity_off is none else ([blocking_entity_off] if blocking_entity_off is string else blocking_entity_off) }}
-  blocking_entity_on_allowed: >
+  blocking_entity_on_allowed: &blocking_entity_on_allowed >
     {{ blocking_entities_on | select("is_state", ["on", "true"]) | list | count == 0 }}
-  blocking_entity_off_allowed: >
+  blocking_entity_off_allowed: &blocking_entity_off_allowed >
     {{ blocking_entities_off | select("is_state", ["off", "false"]) | list | count == 0 }}
-  is_nightmode: >
+  is_nightmode: &is_nightmode >
     {% if night_enabled == true %}
       {% if night_sensor_entity is not none %}
         {{ states(night_sensor_entity) in ["on", "true"] }}
@@ -316,10 +322,12 @@ variables:
     {% else %}
       false
     {% endif %}
-  brightness_effective: >
+  brightness_effective: &brightness_effective >
     {{ night_brightness_level if is_nightmode == true else brightness_level }}
-  color_temperature_effective: >
+  color_temperature_effective: &color_temperature_effective >
     {{ night_color_temperature if is_nightmode == true else color_temperature }}
+  # Set during a motion session when the room gets bright enough
+  end_session: false
 
 triggers:
   # Trigger when motion turns on
@@ -430,14 +438,97 @@ actions:
               - service: homeassistant.turn_on
                 target: !input additional_targets
 
-          # Wait for motion to stop before turning off the light
-          - alias: "Wait for motion to end, before turning off light"
-            wait_for_trigger:
-              - platform: state
-                entity_id: !input motion_entity
-                from: "on"
-                to: "off"
-                for: !input motion_grace_period
+          # Keep the light on while there is motion. New motion is handled inside
+          # this run (instead of restarting the automation), so it only writes one
+          # "Triggered" entry to the activity log per motion session.
+          - alias: "Keep the light on until motion ends"
+            repeat:
+              sequence:
+                # Wait for motion to stop for the grace period, or for new motion
+                - alias: "Wait for motion to end, or for new motion"
+                  wait_for_trigger:
+                    - platform: state
+                      entity_id: !input motion_entity
+                      from: "on"
+                      to: "off"
+                      for: !input motion_grace_period
+                      id: motion_ended
+                    - platform: state
+                      entity_id: !input motion_entity
+                      from: "off"
+                      to: "on"
+                      id: motion_again
+
+                # On new motion, run the same checks a new trigger would
+                - alias: "If new motion was detected"
+                  if:
+                    - condition: template
+                      value_template: >
+                        {{ wait.trigger is not none and wait.trigger.id == "motion_again" }}
+                  then:
+                    # Re-check the current state of the room, light and night mode
+                    - variables:
+                        light_turned_on_manually: *light_turned_on_manually
+                        ambient_exceeded_threshold: *ambient_exceeded_threshold
+                        blocking_entity_on_allowed: *blocking_entity_on_allowed
+                        blocking_entity_off_allowed: *blocking_entity_off_allowed
+                        is_nightmode: *is_nightmode
+                        brightness_effective: *brightness_effective
+                        color_temperature_effective: *color_temperature_effective
+
+                    - alias: "Unless a manually turned on light should be left alone"
+                      if:
+                        - condition: template
+                          value_template: >
+                            {{ not (keep_manual_light_on == true and light_turned_on_manually == true) }}
+                      then:
+                        - choose:
+                            # Still dark and not blocked: refresh brightness and color
+                            - alias: "If ambient below threshold and no blocking"
+                              conditions:
+                                - condition: numeric_state
+                                  entity_id: !input ambient_sensor_entity
+                                  below: !input ambient_threshold
+                                - condition: template
+                                  value_template: >
+                                    {{ blocking_entity_on_allowed == true and blocking_entity_off_allowed == true }}
+                              sequence:
+                                - service: light.turn_on
+                                  data:
+                                    brightness_pct: >
+                                      {{ brightness_effective }}
+                                    color_temp_kelvin: >
+                                      {{ color_temperature_effective }}
+                                    transition: !input transition_duration
+                                  target:
+                                    entity_id: !input light_entity
+                                - alias: "Turn on additional targets"
+                                  if:
+                                    - condition: template
+                                      value_template: >
+                                        {{ additional_targets | length > 0 }}
+                                  then:
+                                    - service: homeassistant.turn_on
+                                      target: !input additional_targets
+
+                            # Bright enough and the light is on: end the session
+                            - alias: "If ambient equal to or above threshold and light on"
+                              conditions:
+                                - condition: template
+                                  value_template: >
+                                    {{ ambient_exceeded_threshold == true }}
+                                - condition: state
+                                  entity_id: !input light_entity
+                                  state: "on"
+                              sequence:
+                                - variables:
+                                    end_session: true
+
+              # Stop when motion has ended, or when it got bright enough
+              until:
+                - condition: template
+                  value_template: >
+                    {{ end_session == true or wait.trigger is none or wait.trigger.id == "motion_ended" }}
 
   # Always turn off light at the end, ensuring no light remains on
   - service: light.turn_off
