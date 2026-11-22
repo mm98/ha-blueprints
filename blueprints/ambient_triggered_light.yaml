@@ -1,0 +1,447 @@
+blueprint:
+  name: Ambient-Triggered Light
+  description: |
+    Turns lights on when the room gets dark and off again when it gets bright, based on the light level alone. The average of one or more light sensors decides. Optional motion sensors make sure lights only come on during the day when someone is actually in the room, while evenings stay light level only. An optional wake-up entity turns the lights on when you get up in the dark. Blocking entities, like a sleep mode, stop the lights from turning on. A manual off is respected until the next dark period or wake-up.
+
+    <details>
+    <summary><strong>🧾 Version History</strong></summary>
+
+    **v1.0.0**: Initial Release
+    - Lights turn on when the average light level stays below the dark level, and off when it stays above the bright level.
+    - Optional motion sensors with a timeout decide if someone is in the room. By default they only count while the sun is up.
+    - Optional wake-up entity turns the lights on when it turns on and it is dark.
+    - Blocking entities (on / off) stop the lights from turning on. They never turn anything off.
+    - A manual off is respected until the next dark period or wake-up.
+    - Optional brightness, color temperature and activity logging.
+
+    </details>
+
+  source_url: https://github.com/mm98/ha-blueprints/blob/main/blueprints/ambient_triggered_light.yaml
+  domain: automation
+  author: mm98
+  homeassistant:
+    min_version: "2025.10.0"
+
+  input:
+    # Lights to control
+    light_entities:
+      name: Lights
+      description: The lights or light groups that turn on when it gets dark and off when it gets bright.
+      selector:
+        entity:
+          multiple: true
+          domain: light
+
+    # Ambient light sensors
+    ambient_sensor_entities:
+      name: Ambient Light Sensors
+      description: One or more sensors that measure the light level. The automation uses their average. Sensors that are unavailable are left out.
+      selector:
+        entity:
+          multiple: true
+          domain: sensor
+          device_class: illuminance
+
+    # Light level settings
+    level_section:
+      name: Light level
+      icon: mdi:brightness-6
+      collapsed: false
+      input:
+        dark_threshold:
+          name: Dark Below
+          description: The lights turn on when the average light level stays below this level.
+          default: 15
+          selector:
+            number:
+              min: 0
+              max: 500
+              unit_of_measurement: lx
+        bright_threshold:
+          name: Bright Above
+          description: The lights turn off when the average light level stays above this level. Keep it well above what the lights themselves add, so they do not switch themselves off.
+          default: 40
+          selector:
+            number:
+              min: 0
+              max: 2000
+              unit_of_measurement: lx
+        dark_delay:
+          name: Dark For
+          description: How long it must stay dark before the lights turn on.
+          default: "00:05:00"
+          selector:
+            time: {}
+        bright_delay:
+          name: Bright For
+          description: How long it must stay bright before the lights turn off.
+          default: "00:10:00"
+          selector:
+            time: {}
+
+    # Light settings
+    light_section:
+      name: Light
+      icon: mdi:lightbulb-outline
+      collapsed: true
+      input:
+        brightness_level:
+          name: Brightness
+          description: The brightness the lights turn on with.
+          default: 60
+          selector:
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: "%"
+        use_color_temperature:
+          name: Set Color Temperature
+          description: Also set the color temperature when the lights turn on. Leave it off for lights that only dim.
+          default: false
+          selector:
+            boolean: {}
+        color_temperature:
+          name: Color Temperature
+          description: The color temperature in Kelvin, used when Set Color Temperature is on.
+          default: 2700
+          selector:
+            color_temp:
+              min: 1500
+              max: 7000
+              unit: kelvin
+        transition_duration:
+          name: Transition
+          description: Time it takes for the lights to fade on or off.
+          default: 2
+          selector:
+            number:
+              min: 0
+              max: 60
+              unit_of_measurement: seconds
+
+    # Presence settings
+    presence_section:
+      name: Presence
+      icon: mdi:motion-sensor
+      collapsed: true
+      input:
+        motion_entities:
+          name: Motion Sensors
+          description: Optional motion or occupancy sensors. When set, the lights only turn on if one of them saw motion within the timeout, and turn off after no motion for the timeout. Motion never turns the lights off right away.
+          default: []
+          selector:
+            entity:
+              multiple: true
+              domain: binary_sensor
+        presence_timeout:
+          name: No Motion For
+          description: How long without motion before the room counts as empty.
+          default: "00:30:00"
+          selector:
+            time: {}
+        presence_daytime_only:
+          name: Only While The Sun Is Up
+          description: Only use the motion sensors while the sun is up. After sunset the lights follow the light level alone, so they stay on while you sit still.
+          default: true
+          selector:
+            boolean: {}
+
+    # Wake-up settings
+    wake_section:
+      name: Wake-up
+      icon: mdi:weather-sunset-up
+      collapsed: true
+      input:
+        wake_entity:
+          name: Wake-up Entity
+          description: Optional entity that turns on when you get up, for example an awake sensor. When it turns on and it is dark, the lights turn on. This also ends a manual off.
+          default: null
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
+                - switch
+
+    # Optional blocking entities
+    blocking_section:
+      name: Blocking
+      icon: mdi:cancel
+      collapsed: true
+      input:
+        blocking_entity_on:
+          name: Blocking Entities (on / true)
+          description: The lights do not turn on while any of these entities is on or true, e.g., Sleep mode. Blocking never turns lights off.
+          default: []
+          selector:
+            entity:
+              multiple: true
+              domain:
+                - binary_sensor
+                - input_boolean
+                - switch
+        blocking_entity_off:
+          name: Blocking Entities (off / false)
+          description: The lights do not turn on while any of these entities is off or false, e.g., Someone home. Blocking never turns lights off.
+          default: []
+          selector:
+            entity:
+              multiple: true
+              domain:
+                - binary_sensor
+                - input_boolean
+                - switch
+
+    # Manual control settings
+    manual_section:
+      name: Manual
+      icon: mdi:hand-back-right-outline
+      collapsed: true
+      input:
+        respect_manual_off:
+          name: Respect Manual Off
+          description: If you turn the lights off yourself, they stay off until the next dark period or the next wake-up, even when motion is seen.
+          default: true
+          selector:
+            boolean: {}
+
+    # Debug handling settings
+    debug_section:
+      name: Debug
+      icon: mdi:content-save-settings-outline
+      collapsed: true
+      input:
+        log_to_activity:
+          name: Log to Activity
+          description: Logs an activity entry each time the lights are turned on or off, with the reason, the light level and the thresholds.
+          default: false
+          selector:
+            boolean: {}
+
+mode: queued
+max: 5
+max_exceeded: silent
+
+trigger_variables:
+  tv_sensors: !input ambient_sensor_entities
+  tv_dark: !input dark_threshold
+  tv_bright: !input bright_threshold
+  tv_motion: !input motion_entities
+  tv_wake: !input wake_entity
+
+variables:
+  light_entities: !input light_entities
+  ambient_sensor_entities: !input ambient_sensor_entities
+  dark_threshold: !input dark_threshold
+  bright_threshold: !input bright_threshold
+  brightness_level: !input brightness_level
+  use_color_temperature: !input use_color_temperature
+  color_temperature: !input color_temperature
+  transition_duration: !input transition_duration
+  motion_entities: !input motion_entities
+  presence_timeout: !input presence_timeout
+  presence_daytime_only: !input presence_daytime_only
+  blocking_entity_on: !input blocking_entity_on
+  blocking_entity_off: !input blocking_entity_off
+  respect_manual_off: !input respect_manual_off
+  log_to_activity: !input log_to_activity
+
+  # Inputs may hold a list, a single entity or nothing
+  lights: >
+    {{ [] if light_entities is none else ([light_entities] if light_entities is string else light_entities) }}
+  sensors: >
+    {{ [] if ambient_sensor_entities is none else ([ambient_sensor_entities] if ambient_sensor_entities is string else ambient_sensor_entities) }}
+  motions: >
+    {{ [] if motion_entities is none else ([motion_entities] if motion_entities is string else motion_entities) }}
+  blocking_entities_on: >
+    {{ [] if blocking_entity_on is none else ([blocking_entity_on] if blocking_entity_on is string else blocking_entity_on) }}
+  blocking_entities_off: >
+    {{ [] if blocking_entity_off is none else ([blocking_entity_off] if blocking_entity_off is string else blocking_entity_off) }}
+
+  # Average light level of all available sensors, or none if none are available
+  ambient_level: >
+    {% set values = sensors | map("states") | map("float", none) | reject("none") | list %}
+    {{ (values | sum / values | count) | round(1) if values | count > 0 else none }}
+  is_dark: >
+    {{ ambient_level is not none and ambient_level | float < dark_threshold | float }}
+  is_bright: >
+    {{ ambient_level is not none and ambient_level | float > bright_threshold | float }}
+
+  any_light_on: >
+    {{ lights | select("is_state", "on") | list | count > 0 }}
+  # The lights are all off and were last turned off by hand, not by an automation or script
+  lights_turned_off_manually: >
+    {% set ns = namespace(manual=false) %}
+    {% for entity in lights %}
+      {% if states[entity] is not none and states[entity].context.parent_id is none %}
+        {% set ns.manual = true %}
+      {% endif %}
+    {% endfor %}
+    {{ lights | count > 0 and lights | select("is_state", "on") | list | count == 0 and ns.manual }}
+
+  blocking_allowed: >
+    {{ blocking_entities_on | select("is_state", ["on", "true"]) | list | count == 0
+       and blocking_entities_off | select("is_state", ["off", "false"]) | list | count == 0 }}
+
+  # Motion only counts when sensors are set, and by default only while the sun is up
+  presence_required: >
+    {{ motions | count > 0 and (presence_daytime_only == false or is_state("sun.sun", "above_horizon")) }}
+  presence_recent: >
+    {% set timeout = as_timedelta(presence_timeout) %}
+    {% set ns = namespace(found=false) %}
+    {% for entity in motions %}
+      {% if is_state(entity, "on") or (states[entity] is not none and now() - states[entity].last_changed < timeout) %}
+        {% set ns.found = true %}
+      {% endif %}
+    {% endfor %}
+    {{ ns.found }}
+
+  # Set when the lights are switched, used for the activity log
+  log_action: none
+
+triggers:
+  # Average light level stayed below the dark level
+  - trigger: template
+    value_template: >
+      {% set values = tv_sensors | map("states") | map("float", none) | reject("none") | list %}
+      {{ values | count > 0 and (values | sum / values | count) < tv_dark | float }}
+    for: !input dark_delay
+    id: dark
+
+  # Average light level stayed above the bright level
+  - trigger: template
+    value_template: >
+      {% set values = tv_sensors | map("states") | map("float", none) | reject("none") | list %}
+      {{ values | count > 0 and (values | sum / values | count) > tv_bright | float }}
+    for: !input bright_delay
+    id: bright
+
+  # Motion started in one of the rooms
+  - trigger: template
+    value_template: >
+      {{ tv_motion | count > 0 and tv_motion | select("is_state", "on") | list | count > 0 }}
+    id: motion
+
+  # No motion in any of the rooms for the timeout
+  - trigger: template
+    value_template: >
+      {{ tv_motion | count > 0 and tv_motion | select("is_state", "on") | list | count == 0 }}
+    for: !input presence_timeout
+    id: no_motion
+
+  # Wake-up entity turned on
+  - trigger: template
+    value_template: >
+      {{ tv_wake is not none and states(tv_wake) in ["on", "true"] }}
+    # A short wait lets related sensors, like a sleep sensor, update first
+    for: "00:00:02"
+    id: wake
+
+  # Home Assistant started, so a dark period during the restart is not missed
+  - trigger: homeassistant
+    event: start
+    id: restarted
+
+actions:
+  - choose:
+      # Turn on: it is dark, the lights are off and nothing blocks
+      - alias: "If it is dark and the lights should turn on"
+        conditions:
+          - condition: trigger
+            id:
+              - dark
+              - motion
+              - wake
+              - restarted
+          - alias: "If dark, lights off and not blocked"
+            condition: template
+            value_template: >
+              {{ is_dark == true and any_light_on == false and blocking_allowed == true }}
+          # Someone must be in the room, unless you just woke up
+          - alias: "If presence is not needed or someone is there"
+            condition: template
+            value_template: >
+              {{ trigger.id == "wake" or presence_required == false or presence_recent == true }}
+          # A manual off only ends with a new dark period or a wake-up
+          - alias: "If a manual off should not be respected"
+            condition: template
+            value_template: >
+              {{ trigger.id in ["dark", "wake"] or respect_manual_off == false or lights_turned_off_manually == false }}
+        sequence:
+          - if:
+              - condition: template
+                value_template: >
+                  {{ use_color_temperature == true }}
+            then:
+              - action: light.turn_on
+                data:
+                  brightness_pct: >
+                    {{ brightness_level }}
+                  color_temp_kelvin: >
+                    {{ color_temperature }}
+                  transition: >
+                    {{ transition_duration }}
+                target:
+                  entity_id: >
+                    {{ lights }}
+            else:
+              - action: light.turn_on
+                data:
+                  brightness_pct: >
+                    {{ brightness_level }}
+                  transition: >
+                    {{ transition_duration }}
+                target:
+                  entity_id: >
+                    {{ lights }}
+          - variables:
+              log_action: "on"
+
+      # Turn off: it is bright, or the room has been empty during the day
+      - alias: "If it is bright or the room is empty"
+        conditions:
+          - alias: "If any light is on"
+            condition: template
+            value_template: >
+              {{ any_light_on == true }}
+          - condition: or
+            conditions:
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id: bright
+                  - condition: template
+                    value_template: >
+                      {{ is_bright == true }}
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id: no_motion
+                  - condition: template
+                    value_template: >
+                      {{ presence_required == true and presence_recent == false }}
+        sequence:
+          - action: light.turn_off
+            data:
+              transition: >
+                {{ transition_duration }}
+            target:
+              entity_id: >
+                {{ lights }}
+          - variables:
+              log_action: "off"
+
+  # Log a debug entry if logging is enabled and the lights were switched
+  - alias: "If activity logging is enabled"
+    if:
+      - condition: template
+        value_template: >
+          {{ log_to_activity == true and log_action is not none }}
+    then:
+      - action: logbook.log
+        data:
+          name: Ambient-Triggered Light
+          message: >
+            💡 lights {{ log_action }}, reason: {{ trigger.id }}, light level: {{ ambient_level }} (lux), dark below: {{ dark_threshold }} (lux), bright above: {{ bright_threshold }} (lux), presence needed: {{ presence_required }}, presence recent: {{ presence_recent }}
+          entity_id: >
+            {{ lights[0] }}
