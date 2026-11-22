@@ -12,6 +12,7 @@ blueprint:
     - A light that is on in dark mode stays on when motion stops, and turns off when the ambient light stays above a separate "Bright Above" level.
     - In dark mode, the light only turns off on motion when it is above "Bright Above", so the light's own glow cannot switch it off.
     - Night mode, blocking entities and "Keep Manual Light On" also apply to dark mode.
+    - When the blocking entities clear while it is dark, for example when sleep mode turns off in the morning, the light turns on.
     - After a Home Assistant restart in dark mode, the light turns back on if the room is dark.
 
     **v1.5.0**: Fewer Activity Entries
@@ -315,6 +316,10 @@ blueprint:
 
 mode: single
 max_exceeded: silent
+
+trigger_variables:
+  tv_blocking_on: !input blocking_entity_on
+  tv_blocking_off: !input blocking_entity_off
 # trace:
 #   stored_traces: 50
 
@@ -401,6 +406,16 @@ triggers:
     for: !input bright_delay
     id: bright
 
+  # Dark mode: all blocking entities cleared, for example when you wake up
+  - platform: template
+    value_template: >
+      {% set on_list = [] if tv_blocking_on is none else ([tv_blocking_on] if tv_blocking_on is string else tv_blocking_on) %}
+      {% set off_list = [] if tv_blocking_off is none else ([tv_blocking_off] if tv_blocking_off is string else tv_blocking_off) %}
+      {{ (on_list | count + off_list | count) > 0
+         and on_list | select("is_state", ["on", "true"]) | list | count == 0
+         and off_list | select("is_state", ["off", "false"]) | list | count == 0 }}
+    id: unblocked
+
 conditions:
   # Leave a manually turned on light alone when motion is detected, if enabled
   - alias: "If manual light should be left alone"
@@ -464,7 +479,12 @@ conditions:
       - condition: and
         conditions:
           - condition: trigger
-            id: dark
+            id:
+              - dark
+              - unblocked
+          - condition: numeric_state
+            entity_id: !input ambient_sensor_entity
+            below: !input ambient_threshold
           - alias: "If dark mode is enabled and no blocking"
             condition: template
             value_template: >
@@ -472,7 +492,7 @@ conditions:
           - condition: state
             entity_id: !input light_entity
             state: "off"
-        alias: If it got dark in dark mode
+        alias: If it got dark or blocking cleared in dark mode
 
       # Dark mode: it got bright and the light is on
       - condition: and
@@ -508,7 +528,7 @@ actions:
     if:
       - condition: template
         value_template: >
-          {{ dark_mode_enabled == true and (trigger.id == "dark" or (trigger.id == "restarted" and states(ambient_sensor_entity) | int(0) < ambient_threshold | int(0) and blocking_entity_on_allowed == true and blocking_entity_off_allowed == true)) }}
+          {{ dark_mode_enabled == true and (trigger.id in ["dark", "unblocked"] or (trigger.id == "restarted" and states(ambient_sensor_entity) | int(0) < ambient_threshold | int(0) and blocking_entity_on_allowed == true and blocking_entity_off_allowed == true)) }}
     then:
       - service: light.turn_on
         data:
