@@ -8,7 +8,7 @@ Automation blueprints for [Home Assistant](https://www.home-assistant.io/). Impo
 | [Appliance cycle counter](#appliance-cycle-counter) | Counts the runs of a washing machine, dishwasher, dryer or vacuum and reminds you when it needs maintenance. |
 | [Button cycle brightness](#button-cycle-brightness) | Steps the brightness of lights up and down with a single button. |
 | [Car mileage notification](#car-mileage-notification) | Warns you before your car passes the yearly km limit of its insurance or lease. |
-| [Motion-triggered adaptive light](#motion-triggered-adaptive-light) | Turns a light on with motion when the room is dark, or just when it gets dark, with a night mode. |
+| [Motion-triggered adaptive light](#motion-triggered-adaptive-light) | Turns a light on with motion when the room is dark, with a night mode. |
 | [Temperature-controlled switch](#temperature-controlled-switch) | Turns a heater, fan or other switch on and off to keep a temperature between two limits. |
 
 All blueprints need Home Assistant 2025.10 or newer.
@@ -68,7 +68,6 @@ Turns a light on with motion when the room is dark enough, and off again when th
 - Night mode uses a lower brightness and a warmer color, on a schedule or with a night sensor.
 - Blocking entities, like a sleep mode helper, keep the light off. You can add as many as you like. Other lights, switches or areas can follow along.
 - An optional setting leaves a manually turned on light alone.
-- Optional dark mode turns the light on when the room gets dark, without motion. It then stays on when motion stops, and turns off when the light level goes above a second, higher level.
 - After a Home Assistant restart the light turns off, so it does not stay on by mistake.
 - Each motion session shows up once in the activity log, no matter how often the sensor sees motion while the light is on.
 
