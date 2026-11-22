@@ -528,7 +528,7 @@ actions:
     if:
       - condition: template
         value_template: >
-          {{ dark_mode_enabled == true and (trigger.id in ["dark", "unblocked"] or (trigger.id == "restarted" and states(ambient_sensor_entity) | int(0) < ambient_threshold | int(0) and blocking_entity_on_allowed == true and blocking_entity_off_allowed == true)) }}
+          {{ dark_mode_enabled == true and (trigger.id in ["dark", "unblocked"] or (trigger.id == "restarted" and states(ambient_sensor_entity) | float(none) is not none and states(ambient_sensor_entity) | float < ambient_threshold | float and blocking_entity_on_allowed == true and blocking_entity_off_allowed == true)) }}
     then:
       - service: light.turn_on
         data:
@@ -684,12 +684,17 @@ actions:
                   value_template: >
                     {{ end_session == true or wait.trigger is none or wait.trigger.id == "motion_ended" }}
 
-  # In dark mode, a light that is on stays on after motion until it gets bright
+  # In dark mode, a light that is on stays on after motion until it gets bright,
+  # unless a blocking entity turned on meanwhile (for example sleep mode)
   - alias: "If the light should stay on in dark mode"
     if:
       - condition: template
         value_template: >
-          {{ dark_mode_enabled == true and trigger.id == "motion" and states(ambient_sensor_entity) | int(0) < bright_threshold | int(0) }}
+          {{ dark_mode_enabled == true and trigger.id == "motion"
+             and states(ambient_sensor_entity) | float(none) is not none
+             and states(ambient_sensor_entity) | float < bright_threshold | float
+             and blocking_entities_on | select("is_state", ["on", "true"]) | list | count == 0
+             and blocking_entities_off | select("is_state", ["off", "false"]) | list | count == 0 }}
     then:
       - stop: "Light stays on in dark mode"
 
