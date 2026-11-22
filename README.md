@@ -4,6 +4,7 @@ Automation blueprints for [Home Assistant](https://www.home-assistant.io/). Impo
 
 | Blueprint | What it does |
 |---|---|
+| [Ambient-triggered light](#ambient-triggered-light) | Turns lights on when a room gets dark and off when it gets bright, based on the light level alone. |
 | [Appliance cycle counter](#appliance-cycle-counter) | Counts the runs of a washing machine, dishwasher, dryer or vacuum and reminds you when it needs maintenance. |
 | [Button cycle brightness](#button-cycle-brightness) | Steps the brightness of lights up and down with a single button. |
 | [Car mileage notification](#car-mileage-notification) | Warns you before your car passes the yearly km limit of its insurance or lease. |
@@ -15,6 +16,18 @@ All blueprints need Home Assistant 2025.10 or newer.
 ## Install
 
 Select the **Import blueprint** button of a blueprint below, then create an automation from it under **Settings > Automations & scenes > Blueprints**. To get a newer version later, pick **Re-import blueprint** in the blueprint's menu there. Your automations keep their settings.
+
+## Ambient-triggered light
+
+[![Import the Ambient-triggered light blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmm98%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fambient_triggered_light.yaml)
+
+Turns lights on when the room gets dark and off again when it gets bright. Made for evening lights that should follow the daylight instead of a clock.
+
+- Uses the average of one or more light sensors. The lights turn on below one level and off above a higher one, each after a short wait, so they do not flick on and off.
+- Optional motion sensors make sure that on a grey day the lights only come on when someone is in the room. By default they only count while the sun is up, so in the evening the lights stay on while you sit still.
+- An optional wake-up entity, like an awake sensor, turns the lights on when you get up in the dark.
+- Blocking entities, like a sleep mode helper, stop the lights from turning on. They never turn anything off.
+- If you turn the lights off yourself, they stay off until the next dark period or wake-up.
 
 ## Appliance cycle counter
 
