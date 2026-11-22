@@ -1,10 +1,19 @@
 blueprint:
   name: Motion-Triggered Adaptive Light
   description: |
-    Controls a light based on motion, ambient brightness, and color temperature. Activates the light when motion is detected and ambient light is below the threshold, and turns it off after motion stops or ambient light rises. Supports optional night mode with lower brightness, blocking entities, leaving manually turned on lights alone, and automatic light reset after Home Assistant restart or power recovery.
+    Controls a light based on motion, ambient brightness, and color temperature. Activates the light when motion is detected and ambient light is below the threshold, and turns it off after motion stops or ambient light rises. Supports an optional dark mode that turns the light on when the room gets dark without motion, optional night mode with lower brightness, blocking entities, leaving manually turned on lights alone, and automatic light reset after Home Assistant restart or power recovery.
 
     <details>
     <summary><strong>🧾 Version History</strong></summary>
+
+    **v1.6.0**: Turn On When Dark
+    - Added an optional dark mode (off by default, so existing automations are unchanged).
+    - When enabled, the light turns on when the ambient light stays below the threshold for a set time, without motion.
+    - A light that is on in dark mode stays on when motion stops, and turns off when the ambient light stays above a separate "Bright Above" level.
+    - In dark mode, the light only turns off on motion when it is above "Bright Above", so the light's own glow cannot switch it off.
+    - Night mode, blocking entities and "Keep Manual Light On" also apply to dark mode.
+    - When the blocking entities clear while it is dark, for example when sleep mode turns off in the morning, the light turns on.
+    - After a Home Assistant restart in dark mode, the light turns back on if the room is dark.
 
     **v1.5.0**: Fewer Activity Entries
     - Runs in `single` mode instead of `restart`, so new motion while the light is on no longer starts a new run.
@@ -203,6 +212,40 @@ blueprint:
           selector:
             time: {}
 
+    # Dark mode settings
+    dark_mode_section:
+      name: Dark mode
+      icon: mdi:weather-sunset-down
+      collapsed: true
+      input:
+        dark_mode_enabled:
+          name: Turn On When Dark
+          description: Turns the light on when the ambient light stays below the Ambient Threshold, without motion. The light then stays on when motion stops, and turns off when it gets bright.
+          default: false
+          selector:
+            boolean: {}
+        dark_delay:
+          name: Dark For
+          description: How long the ambient light must stay below the Ambient Threshold before the light turns on.
+          default: "00:05:00"
+          selector:
+            time: {}
+        bright_threshold:
+          name: Bright Above
+          description: In dark mode, the light turns off when the ambient light stays above this level. Keep it well above the Ambient Threshold and above what the light itself adds, so it does not switch itself off.
+          default: 40
+          selector:
+            number:
+              min: 0
+              max: 2000
+              unit_of_measurement: lx
+        bright_delay:
+          name: Bright For
+          description: How long the ambient light must stay above Bright Above before the light turns off.
+          default: "00:10:00"
+          selector:
+            time: {}
+
     # Optional blocking entities to disable automation temporarily
     blocking_section:
       name: Blocking
@@ -273,6 +316,10 @@ blueprint:
 
 mode: single
 max_exceeded: silent
+
+trigger_variables:
+  tv_blocking_on: !input blocking_entity_on
+  tv_blocking_off: !input blocking_entity_off
 # trace:
 #   stored_traces: 50
 
@@ -293,12 +340,15 @@ variables:
   reset_light_on_restart: !input reset_light_on_restart
   additional_targets: !input additional_targets
   keep_manual_light_on: !input keep_manual_light_on
+  dark_mode_enabled: !input dark_mode_enabled
+  bright_threshold: !input bright_threshold
   light_entity: !input light_entity
 
   light_turned_on_manually: &light_turned_on_manually >
     {{ is_state(light_entity, "on") and states[light_entity].context.parent_id is none }}
+  # In dark mode the light only counts as "bright enough" above Bright Above
   ambient_exceeded_threshold: &ambient_exceeded_threshold >
-    {{ states(ambient_sensor_entity) | int(0) >= ambient_threshold | int(0) }}
+    {{ states(ambient_sensor_entity) | int(0) >= (bright_threshold if dark_mode_enabled == true else ambient_threshold) | int(0) }}
   # Blocking inputs may hold a list, a single entity (older automations) or nothing
   blocking_entities_on: >
     {{ [] if blocking_entity_on is none else ([blocking_entity_on] if blocking_entity_on is string else blocking_entity_on) }}
@@ -341,6 +391,30 @@ triggers:
   - platform: homeassistant
     event: start
     id: restarted
+
+  # Dark mode: ambient light stayed below the threshold
+  - platform: numeric_state
+    entity_id: !input ambient_sensor_entity
+    below: !input ambient_threshold
+    for: !input dark_delay
+    id: dark
+
+  # Dark mode: ambient light stayed above Bright Above
+  - platform: numeric_state
+    entity_id: !input ambient_sensor_entity
+    above: !input bright_threshold
+    for: !input bright_delay
+    id: bright
+
+  # Dark mode: all blocking entities cleared, for example when you wake up
+  - platform: template
+    value_template: >
+      {% set on_list = [] if tv_blocking_on is none else ([tv_blocking_on] if tv_blocking_on is string else tv_blocking_on) %}
+      {% set off_list = [] if tv_blocking_off is none else ([tv_blocking_off] if tv_blocking_off is string else tv_blocking_off) %}
+      {{ (on_list | count + off_list | count) > 0
+         and on_list | select("is_state", ["on", "true"]) | list | count == 0
+         and off_list | select("is_state", ["off", "false"]) | list | count == 0 }}
+    id: unblocked
 
 conditions:
   # Leave a manually turned on light alone when motion is detected, if enabled
@@ -390,6 +464,50 @@ conditions:
               {{ reset_light_on_restart == true }}
         alias: If Home Assistant restarted
 
+      # Dark mode: Home Assistant restarted while it is dark
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: restarted
+          - alias: "If dark mode is enabled"
+            condition: template
+            value_template: >
+              {{ dark_mode_enabled == true }}
+        alias: If Home Assistant restarted in dark mode
+
+      # Dark mode: it got dark, the light is off and no blocking entity is active
+      - condition: and
+        conditions:
+          - condition: trigger
+            id:
+              - dark
+              - unblocked
+          - condition: numeric_state
+            entity_id: !input ambient_sensor_entity
+            below: !input ambient_threshold
+          - alias: "If dark mode is enabled and no blocking"
+            condition: template
+            value_template: >
+              {{ dark_mode_enabled == true and blocking_entity_on_allowed == true and blocking_entity_off_allowed == true }}
+          - condition: state
+            entity_id: !input light_entity
+            state: "off"
+        alias: If it got dark or blocking cleared in dark mode
+
+      # Dark mode: it got bright and the light is on
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: bright
+          - alias: "If dark mode is enabled and the light is not left alone"
+            condition: template
+            value_template: >
+              {{ dark_mode_enabled == true and not (keep_manual_light_on == true and light_turned_on_manually == true) }}
+          - condition: state
+            entity_id: !input light_entity
+            state: "on"
+        alias: If it got bright in dark mode
+
 actions:
   # Log a debug entry if logging is enabled
   - alias: "If activity logging is enabled"
@@ -402,8 +520,44 @@ actions:
         data:
           name: Motion-Triggered Adaptive Light
           message: >
-            💡 mode: {{ "night" if is_nightmode == true else "normal" }}, brightness: {{ brightness_effective }}%, color temp: {{ color_temperature_effective }} (kelvin), ambient light: {{ states(ambient_sensor_entity) }} (lux), ambient threshold: {{ ambient_threshold }} (lux), ambient exceeded: {{ ambient_exceeded_threshold == true }}, night: from {{ today_at(night_time_start).strftime("%-H:%M") }} to {{ today_at(night_time_end).strftime("%-H:%M") }}
+            💡 trigger: {{ trigger.id }}, mode: {{ "night" if is_nightmode == true else "normal" }}, dark mode: {{ dark_mode_enabled == true }}, brightness: {{ brightness_effective }}%, color temp: {{ color_temperature_effective }} (kelvin), ambient light: {{ states(ambient_sensor_entity) }} (lux), ambient threshold: {{ ambient_threshold }} (lux), bright above: {{ bright_threshold }} (lux), ambient exceeded: {{ ambient_exceeded_threshold == true }}, night: from {{ today_at(night_time_start).strftime("%-H:%M") }} to {{ today_at(night_time_end).strftime("%-H:%M") }}
           entity_id: !input ambient_sensor_entity
+
+  # Dark mode branch: turn the light on when it got dark, or after a restart while it is dark
+  - alias: "If it is dark in dark mode"
+    if:
+      - condition: template
+        value_template: >
+          {{ dark_mode_enabled == true and (trigger.id in ["dark", "unblocked"] or (trigger.id == "restarted" and states(ambient_sensor_entity) | float(none) is not none and states(ambient_sensor_entity) | float < ambient_threshold | float and blocking_entity_on_allowed == true and blocking_entity_off_allowed == true)) }}
+    then:
+      - service: light.turn_on
+        data:
+          brightness_pct: >
+            {{ brightness_effective }}
+          color_temp_kelvin: >
+            {{ color_temperature_effective }}
+          transition: !input transition_duration
+        target:
+          entity_id: !input light_entity
+      - alias: "Turn on additional targets"
+        if:
+          - condition: template
+            value_template: >
+              {{ additional_targets | length > 0 }}
+        then:
+          - service: homeassistant.turn_on
+            target: !input additional_targets
+      # The light stays on until it gets bright
+      - stop: "Light turned on in dark mode"
+
+  # Dark mode branch: a restart while it is not dark only turns the light off when reset is enabled
+  - alias: "If restarted in dark mode without reset"
+    if:
+      - condition: template
+        value_template: >
+          {{ dark_mode_enabled == true and trigger.id == "restarted" and reset_light_on_restart == false }}
+    then:
+      - stop: "Nothing to do after restart"
 
   # Motion trigger branch: turns on light if dark enough
   - alias: "If triggered by motion"
@@ -530,7 +684,21 @@ actions:
                   value_template: >
                     {{ end_session == true or wait.trigger is none or wait.trigger.id == "motion_ended" }}
 
-  # Always turn off light at the end, ensuring no light remains on
+  # In dark mode, a light that is on stays on after motion until it gets bright,
+  # unless a blocking entity turned on meanwhile (for example sleep mode)
+  - alias: "If the light should stay on in dark mode"
+    if:
+      - condition: template
+        value_template: >
+          {{ dark_mode_enabled == true and trigger.id == "motion"
+             and states(ambient_sensor_entity) | float(none) is not none
+             and states(ambient_sensor_entity) | float < bright_threshold | float
+             and blocking_entities_on | select("is_state", ["on", "true"]) | list | count == 0
+             and blocking_entities_off | select("is_state", ["off", "false"]) | list | count == 0 }}
+    then:
+      - stop: "Light stays on in dark mode"
+
+  # Turn off light at the end, ensuring no light remains on
   - service: light.turn_off
     data:
       transition: !input transition_duration
