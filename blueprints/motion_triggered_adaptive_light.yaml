@@ -1,10 +1,14 @@
 blueprint:
   name: Motion-Triggered Adaptive Light
   description: |
-    Controls a light based on motion, ambient brightness, and color temperature. Activates the light when motion is detected and ambient light is below the threshold, and turns it off after motion stops or ambient light rises. Supports optional night mode with lower brightness, blocking entities, leaving manually turned on lights alone, and automatic light reset after Home Assistant restart or power recovery.
+    Controls a light based on motion or occupancy, ambient brightness, and color temperature. Activates the light when motion or occupancy is detected and ambient light is below the threshold, and turns it off after motion stops or ambient light rises. Supports optional night mode with lower brightness, blocking entities, leaving manually turned on lights alone, and automatic light reset after Home Assistant restart or power recovery.
 
     <details>
     <summary><strong>🧾 Version History</strong></summary>
+
+    **v1.6.0**: Occupancy and Presence Sensors
+    - The sensor input now also accepts occupancy and presence sensors, for example mmWave presence sensors, not only motion sensors.
+    - Existing automations keep working without changes.
 
     **v1.5.0**: Fewer Activity Entries
     - Runs in `single` mode instead of `restart`, so new motion while the light is on no longer starts a new run.
@@ -60,14 +64,18 @@ blueprint:
     min_version: "2025.10.0"
 
   input:
-    # Motion sensor input
+    # Motion, occupancy or presence sensor input
     motion_entity:
-      name: Motion Sensor
-      description: The motion sensor used to detect movement and trigger the automation.
+      name: Motion or Occupancy Sensor
+      description: The motion, occupancy or presence sensor that turns the light on when it detects someone and lets it turn off after it clears.
       selector:
         entity:
-          domain: binary_sensor
-          device_class: motion
+          filter:
+            - domain: binary_sensor
+              device_class:
+                - motion
+                - occupancy
+                - presence
 
     # Light sensor input
     light_entity:
@@ -198,7 +206,7 @@ blueprint:
       input:
         motion_grace_period:
           name: Motion Grace Period
-          description: How long the light stays on after motion stops.
+          description: How long the light stays on after the sensor stops detecting motion or occupancy.
           default: "00:02:00"
           selector:
             time: {}
